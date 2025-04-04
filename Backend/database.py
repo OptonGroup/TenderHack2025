@@ -1,8 +1,7 @@
 from typing import Generator, Optional
 import os
 from sqlalchemy import create_engine, Engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from sqlalchemy.pool import QueuePool
 from dotenv import load_dotenv
 import urllib.parse
@@ -14,7 +13,7 @@ Base = declarative_base()
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://admin:MI_TOCHNO_POBEDIM@109.73.195.217:5432/default_db"  # Запасное значение на случай отсутствия .env
+    "postgresql://admin:MI_TOCHNO_POBEDIM@109.73.195.217:5432/default_db"
 )
 
 DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "5"))
@@ -47,12 +46,15 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    class TestDb(Base):
-        __tablename__ = 'testik'
-        id = Column(Integer, primary_key=True)
-        name = Column(String(50))
-
+    """
+    Инициализирует базу данных, создавая все таблицы,
+    определенные в моделях.
+    """
+    import models
+    
+    print("Создание таблиц в базе данных...")
     Base.metadata.create_all(bind=engine)
+    print("Таблицы успешно созданы!")
 
 
 def get_engine() -> Engine:
@@ -60,12 +62,4 @@ def get_engine() -> Engine:
 
 
 if __name__ == "__main__":
-    # Тестовое подключение
-    try:
-        with engine.connect() as connection:
-            print("Соединение с БД успешно установлено!")
-            result = connection.execute("SELECT 1 as test")
-            print(f"Тестовый запрос: {result.fetchone()}")
-    except Exception as e:
-        print(f"Ошибка подключения к БД: {e}")
-
+    init_db()
