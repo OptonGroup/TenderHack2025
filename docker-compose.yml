@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile
+    container_name: tenderhack_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://admin:MI_TOCHNO_POBEDIM@109.73.195.217:5432/default_db
+      - DB_POOL_SIZE=5
+      - DB_MAX_OVERFLOW=10
+      - DB_POOL_TIMEOUT=30
+      - DB_POOL_RECYCLE=1800
+      - DEBUG=False
+      - LOG_LEVEL=INFO
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - PORT=8000
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - tenderhack_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  tenderhack_network:
+    driver: bridge 
