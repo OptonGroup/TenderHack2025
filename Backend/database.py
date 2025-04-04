@@ -13,7 +13,6 @@ Base = declarative_base()
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://admin:MI_TOCHNO_POBEDIM@109.73.195.217:5432/default_db"
 )
 
 DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "5"))
