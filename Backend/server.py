@@ -1,12 +1,18 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy.future import select
+from sqlalchemy import func
+from typing import List, Optional, Dict, Any
 import uvicorn
 from datetime import timedelta, datetime
-from typing import List, Optional
 import os
 import shutil
 from uuid import uuid4
+import jwt
+from jose import JWTError
+from passlib.context import CryptContext
+from pydantic import validate_arguments
 
 from database import get_db, init_db
 import models
@@ -422,6 +428,200 @@ async def startup_event():
     
     # Создаем директорию для загрузки файлов
     os.makedirs("uploads/tenders", exist_ok=True)
+
+
+# Эндпоинты для работы с историей чатов
+@app.post("/api/chat-history", response_model=schemas.ChatHistory)
+async def create_chat_message(
+    chat_message: schemas.ChatHistoryCreate,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Создание нового сообщения в истории чата
+    """
+    # Проверяем, что текущий пользователь имеет право добавлять сообщение
+    if chat_message.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вы можете добавлять сообщения только для своего пользователя"
+        )
+    
+    # Создаем новую запись в истории чата
+    new_message = models.ChatHistory(**chat_message.dict())
+    db.add(new_message)
+    db.commit()
+    db.refresh(new_message)
+    
+    return new_message
+
+
+@app.get("/api/chat-history/{chat_id}", response_model=schemas.ChatConversation)
+async def get_chat_conversation(
+    chat_id: str,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение истории сообщений для конкретного чата
+    """
+    # Проверяем, что пользователь имеет доступ к этому чату
+    messages = db.query(models.ChatHistory).filter(
+        models.ChatHistory.chat_id == chat_id,
+        models.ChatHistory.user_id == current_user.id
+    ).order_by(models.ChatHistory.timestamp).all()
+    
+    return schemas.ChatConversation(
+        chat_id=chat_id,
+        messages=messages
+    )
+
+
+@app.get("/api/chat-history", response_model=List[str])
+async def get_user_chats(
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка всех чатов пользователя
+    """
+    # Получаем уникальные идентификаторы чатов пользователя
+    chats = db.query(models.ChatHistory.chat_id).filter(
+        models.ChatHistory.user_id == current_user.id
+    ).distinct().all()
+    
+    return [chat[0] for chat in chats]
+
+
+@app.delete("/api/chat-history/{chat_id}", response_model=Dict[str, Any])
+async def delete_chat_history(
+    chat_id: str,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Удаление истории сообщений для конкретного чата
+    """
+    # Удаляем все сообщения текущего пользователя в этом чате
+    deleted = db.query(models.ChatHistory).filter(
+        models.ChatHistory.chat_id == chat_id,
+        models.ChatHistory.user_id == current_user.id
+    ).delete()
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "deleted_messages": deleted,
+        "message": f"История чата с ID {chat_id} успешно удалена"
+    }
+
+
+# Эндпоинты для работы с моделью Data
+@app.get("/api/data", response_model=List[schemas.Data])
+async def get_all_data(
+    skip: int = 0, 
+    limit: int = 100, 
+    search: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка всех записей Data с пагинацией и поиском
+    """
+    query = db.query(models.Data)
+    
+    # Применяем поиск по заголовку и описанию, если он указан
+    if search:
+        query = query.filter(
+            (models.Data.title.ilike(f"%{search}%")) | 
+            (models.Data.description.ilike(f"%{search}%"))
+        )
+    
+    # Применяем пагинацию
+    data = query.order_by(models.Data.created_at.desc()).offset(skip).limit(limit).all()
+    return data
+
+
+@app.post("/api/data", response_model=schemas.Data)
+async def create_data(
+    data: schemas.DataCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Создание новой записи Data
+    """
+    new_data = models.Data(**data.dict())
+    db.add(new_data)
+    db.commit()
+    db.refresh(new_data)
+    return new_data
+
+
+@app.get("/api/data/{data_id}", response_model=schemas.Data)
+async def get_data_by_id(
+    data_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Получение записи Data по ID
+    """
+    data = db.query(models.Data).filter(models.Data.id == data_id).first()
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запись не найдена"
+        )
+    return data
+
+
+@app.put("/api/data/{data_id}", response_model=schemas.Data)
+async def update_data(
+    data_id: int,
+    data_update: schemas.DataUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Обновление записи Data
+    """
+    data = db.query(models.Data).filter(models.Data.id == data_id).first()
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запись не найдена"
+        )
+    
+    # Обновляем только предоставленные поля
+    update_data = data_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(data, key, value)
+    
+    db.commit()
+    db.refresh(data)
+    return data
+
+
+@app.delete("/api/data/{data_id}", response_model=Dict[str, Any])
+async def delete_data(
+    data_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Удаление записи Data
+    """
+    data = db.query(models.Data).filter(models.Data.id == data_id).first()
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запись не найдена"
+        )
+    
+    db.delete(data)
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Запись с ID {data_id} успешно удалена"
+    }
 
 
 if __name__ == '__main__':

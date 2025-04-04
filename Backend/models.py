@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Text
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, Text, JSON
 from sqlalchemy.orm import relationship
 from database import Base
 import datetime
@@ -14,6 +14,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     tenders = relationship("Tender", back_populates="creator")
     bids = relationship("Bid", back_populates="bidder")
+    chat_histories = relationship("ChatHistory", back_populates="user")
 
 
 class Category(Base):
@@ -70,4 +71,29 @@ class Document(Base):
     file_type = Column(String(50), nullable=True)
     file_size = Column(Integer, nullable=True)
     tender_id = Column(Integer, ForeignKey("tenders.id"))
-    tender = relationship("Tender", back_populates="documents") 
+    tender = relationship("Tender", back_populates="documents")
+
+
+class ChatHistory(Base):
+    __tablename__ = "chat_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    chat_id = Column(String(50), index=True)
+    message = Column(Text, nullable=False)
+    is_bot = Column(Boolean, default=False)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    message_metadata = Column(JSON, nullable=True)
+    
+    user = relationship("User", back_populates="chat_histories")
+
+
+class Data(Base):
+    """Модель для хранения данных с заголовком и описанием"""
+    __tablename__ = "data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow) 

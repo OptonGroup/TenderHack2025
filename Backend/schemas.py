@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
 
@@ -186,6 +186,67 @@ class Document(DocumentBase):
     """Полная модель документа"""
     id: int
     upload_date: datetime
+    
+    class Config:
+        orm_mode = True
+
+
+# Схемы для ChatHistory
+class ChatHistoryBase(BaseModel):
+    """Базовые данные истории чата"""
+    user_id: int
+    chat_id: str
+    message: str
+    is_bot: bool = False
+    message_metadata: Optional[Dict[str, Any]] = None
+
+
+class ChatHistoryCreate(ChatHistoryBase):
+    """Данные для создания записи в истории чата"""
+    pass
+
+
+class ChatHistory(ChatHistoryBase):
+    """Полная модель истории чата"""
+    id: int
+    timestamp: datetime
+    
+    class Config:
+        orm_mode = True
+
+
+class ChatConversation(BaseModel):
+    """Модель для получения всей истории конкретного чата"""
+    chat_id: str
+    messages: List[ChatHistory]
+    
+    class Config:
+        orm_mode = True
+
+
+# Схемы для новой модели Data
+class DataBase(BaseModel):
+    """Базовые данные модели Data"""
+    title: str
+    description: Optional[str] = None
+
+
+class DataCreate(DataBase):
+    """Данные для создания записи в модели Data"""
+    pass
+
+
+class DataUpdate(BaseModel):
+    """Данные для обновления записи в модели Data"""
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+class Data(DataBase):
+    """Полная модель Data"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
     
     class Config:
         orm_mode = True
