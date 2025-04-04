@@ -13,6 +13,17 @@ const ChatContainer = styled.div`
   box-shadow: ${shadows.medium};
   margin: 32px auto;
   overflow: hidden;
+  
+  @media (max-width: 768px) {
+    margin: 16px auto;
+    height: calc(100vh - 200px);
+  }
+  
+  @media (max-width: 480px) {
+    margin: 8px auto;
+    height: calc(100vh - 160px);
+    border-radius: ${borderRadius.small};
+  }
 `;
 
 const ChatHeader = styled.div`
@@ -21,6 +32,10 @@ const ChatHeader = styled.div`
   padding: 16px 24px;
   background-color: ${colors.paleBlue};
   border-bottom: 1px solid ${colors.grayBlue};
+  
+  @media (max-width: 480px) {
+    padding: 12px 16px;
+  }
 `;
 
 const ChatTitle = styled.h2`
@@ -28,6 +43,10 @@ const ChatTitle = styled.h2`
   font-weight: 600;
   color: ${colors.black};
   margin: 0;
+  
+  @media (max-width: 480px) {
+    font-size: 16px;
+  }
 `;
 
 const ChatMessages = styled.div`
@@ -37,6 +56,11 @@ const ChatMessages = styled.div`
   display: flex;
   flex-direction: column;
   gap: 16px;
+  
+  @media (max-width: 480px) {
+    padding: 16px;
+    gap: 12px;
+  }
 `;
 
 interface MessageProps {
@@ -48,6 +72,10 @@ const MessageWrapper = styled.div<MessageProps>`
   flex-direction: column;
   max-width: 80%;
   align-self: ${props => props.isBot ? 'flex-start' : 'flex-end'};
+  
+  @media (max-width: 480px) {
+    max-width: 85%;
+  }
 `;
 
 const MessageContent = styled.div<MessageProps>`
@@ -58,6 +86,11 @@ const MessageContent = styled.div<MessageProps>`
   font-size: 14px;
   line-height: 1.5;
   box-shadow: ${shadows.small};
+  
+  @media (max-width: 480px) {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
 `;
 
 const MessageSource = styled.div`
@@ -73,6 +106,11 @@ const MessageSource = styled.div`
     &:hover {
       color: ${colors.seaDark};
     }
+  }
+  
+  @media (max-width: 480px) {
+    font-size: 11px;
+    margin-top: 6px;
   }
 `;
 
@@ -111,6 +149,10 @@ const ChatInputContainer = styled.div`
   align-items: center;
   padding: 16px 24px;
   border-top: 1px solid ${colors.grayBlue};
+  
+  @media (max-width: 480px) {
+    padding: 12px 16px;
+  }
 `;
 
 const ChatInput = styled.input`
@@ -124,6 +166,12 @@ const ChatInput = styled.input`
   &:focus {
     border-color: ${colors.mainBlue};
     outline: none;
+  }
+  
+  @media (max-width: 480px) {
+    height: 40px;
+    padding: 0 12px;
+    font-size: 13px;
   }
 `;
 
@@ -149,6 +197,12 @@ const SendButton = styled.button`
     background-color: ${colors.grayBlue};
     cursor: not-allowed;
   }
+  
+  @media (max-width: 480px) {
+    width: 40px;
+    height: 40px;
+    margin-left: 8px;
+  }
 `;
 
 const HistoryButton = styled.button`
@@ -168,6 +222,13 @@ const HistoryButton = styled.button`
   &:hover {
     background-color: ${colors.grayBlue};
   }
+  
+  @media (max-width: 480px) {
+    height: 40px;
+    padding: 0 12px;
+    font-size: 13px;
+    margin-right: 8px;
+  }
 `;
 
 interface Message {
@@ -179,7 +240,19 @@ interface Message {
   feedback?: 'positive' | 'negative' | null;
 }
 
-const ChatAssistant: React.FC = () => {
+interface ChatAssistantProps {
+  onMessageSent?: (message: string, response: string) => void;
+  onToggleHistory?: () => void;
+  onRatingChange?: (messageId: string, rating: 'positive' | 'negative' | null) => void;
+  selectedChatId?: string | null;
+}
+
+const ChatAssistant: React.FC<ChatAssistantProps> = ({ 
+  onMessageSent, 
+  onToggleHistory,
+  onRatingChange,
+  selectedChatId
+}) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -195,76 +268,127 @@ const ChatAssistant: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+  
+  // Загружаем сообщения выбранного чата из истории
+  useEffect(() => {
+    if (selectedChatId) {
+      // В реальном приложении здесь должен быть запрос к API для загрузки полной истории чата
+      // Сейчас просто имитируем загрузку сообщений
+      const mockConversation: Message[] = [
+        {
+          id: `${selectedChatId}-1`,
+          content: 'Здравствуйте! Я ИИ-ассистент Портала поставщиков. Чем я могу вам помочь?',
+          isBot: true,
+          timestamp: new Date(Date.now() - 3600000)
+        },
+        {
+          id: `${selectedChatId}-2`,
+          content: 'Как мне зарегистрироваться на портале?',
+          isBot: false,
+          timestamp: new Date(Date.now() - 3500000)
+        },
+        {
+          id: `${selectedChatId}-3`,
+          content: 'Для регистрации на Портале поставщиков вам необходимо: 1) подготовить электронную подпись, 2) заполнить форму регистрации на сайте, 3) подтвердить данные компании. Подробную инструкцию вы можете найти в разделе "Помощь".',
+          isBot: true,
+          source: 'Инструкция по регистрации на Портале поставщиков, раздел 2.1',
+          timestamp: new Date(Date.now() - 3400000),
+          feedback: null
+        }
+      ];
+      
+      setMessages(mockConversation);
+    }
+  }, [selectedChatId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSendMessage = () => {
-    if (inputValue.trim() === '') return;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     
-    const userMessage: Message = {
+    if (!inputValue.trim() || isLoading) return;
+    
+    const userMessage: UserMessage = { content: inputValue };
+    const newMessage: Message = {
       id: Date.now().toString(),
       content: inputValue,
       isBot: false,
       timestamp: new Date()
     };
     
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => [...prev, newMessage]);
     setInputValue('');
     setIsLoading(true);
     
-    // Имитация ответа от API
-    setTimeout(() => {
-      // Здесь должен быть запрос к API
-      const botResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        content: getBotResponse(inputValue),
+    try {
+      const response = await chatService.sendMessage(userMessage);
+      
+      const botMessage: Message = {
+        id: response.id,
+        content: response.content,
         isBot: true,
-        source: 'Постановление Правительства №123 от 15.03.2022',
+        source: response.source,
+        timestamp: new Date(),
+        feedback: null
+      };
+      
+      setMessages(prev => [...prev, botMessage]);
+      
+      // Уведомляем родительский компонент о новом сообщении для истории
+      if (onMessageSent) {
+        onMessageSent(inputValue, response.content);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        content: 'Извините, произошла ошибка при обработке запроса. Пожалуйста, попробуйте еще раз позже.',
+        isBot: true,
         timestamp: new Date()
       };
       
-      setMessages(prev => [...prev, botResponse]);
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
-  };
-
-  const getBotResponse = (userInput: string): string => {
-    // Простая логика для имитации ответов
-    if (userInput.toLowerCase().includes('тендер') || userInput.toLowerCase().includes('закупк')) {
-      return 'Для участия в тендерах на Портале поставщиков вам необходимо зарегистрироваться и получить электронную подпись. После регистрации вы сможете просматривать доступные закупки и подавать заявки.';
-    } else if (userInput.toLowerCase().includes('регистрац')) {
-      return 'Для регистрации на Портале поставщиков вам необходимо: 1) подготовить электронную подпись, 2) заполнить форму регистрации на сайте, 3) подтвердить данные компании. Подробную инструкцию вы можете найти в разделе "Помощь".';
-    } else if (userInput.toLowerCase().includes('оплат') || userInput.toLowerCase().includes('цен')) {
-      return 'Порядок оплаты по контракту устанавливается заказчиком в соответствии с 44-ФЗ. Обычно оплата производится в течение 15 рабочих дней с момента подписания акта выполненных работ.';
-    } else {
-      return 'Спасибо за ваш вопрос. Для получения более подробной информации рекомендую обратиться к разделу FAQ на нашем портале или связаться со службой поддержки.';
     }
   };
 
-  const handleFeedback = (messageId: string, type: 'positive' | 'negative') => {
-    setMessages(prev => prev.map(message => {
-      if (message.id === messageId) {
-        return {
-          ...message,
-          feedback: message.feedback === type ? null : type
-        };
-      }
-      return message;
-    }));
+  const handleFeedback = (messageId: string, type: 'positive' | 'negative' | null) => {
+    // Обновляем сообщение с обратной связью
+    setMessages(prev => 
+      prev.map(message => 
+        message.id === messageId 
+          ? { ...message, feedback: type } 
+          : message
+      )
+    );
+    
+    // Уведомляем родительский компонент о смене рейтинга
+    if (onRatingChange) {
+      onRatingChange(messageId, type);
+    }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleSendMessage();
+  const handleHistoryButtonClick = () => {
+    if (onToggleHistory) {
+      onToggleHistory();
     }
   };
 
   return (
     <ChatContainer>
       <ChatHeader>
-        <ChatTitle>ИИ-ассистент Портала поставщиков</ChatTitle>
+        <ChatTitle>Чат с ассистентом</ChatTitle>
+        
+        <HistoryButton onClick={handleHistoryButtonClick}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '8px' }}>
+            <path d="M13 3C8.03 3 4 7.03 4 12H1L4.89 15.89L4.96 16.03L9 12H6C6 8.13 9.13 5 13 5C16.87 5 20 8.13 20 12C20 15.87 16.87 19 13 19C11.07 19 9.32 18.21 8.06 16.94L6.64 18.36C8.27 19.99 10.51 21 13 21C17.97 21 22 16.97 22 12C22 7.03 17.97 3 13 3ZM12 8V13L16.28 15.54L17 14.33L13.5 12.25V8H12Z" fill="currentColor"/>
+          </svg>
+          История
+        </HistoryButton>
       </ChatHeader>
       
       <ChatMessages>
@@ -274,17 +398,18 @@ const ChatAssistant: React.FC = () => {
               {message.content}
             </MessageContent>
             
-            {message.isBot && message.source && (
+            {message.source && (
               <MessageSource>
-                Источник: <a href="#" target="_blank" rel="noopener noreferrer">{message.source}</a>
+                Источник: <a href="#">{message.source}</a>
               </MessageSource>
             )}
             
-            {message.isBot && (
+            {message.isBot && message.id !== '1' && (
               <MessageFeedback>
                 <FeedbackButton 
-                  className={message.feedback === 'positive' ? 'active' : ''}
-                  onClick={() => handleFeedback(message.id, 'positive')}
+                  className={message.feedback === 'positive' ? 'active' : ''} 
+                  onClick={() => handleFeedback(message.id, message.feedback === 'positive' ? null : 'positive')}
+                  aria-label="Положительная оценка"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M1 21H5V9H1V21ZM23 10C23 8.9 22.1 8 21 8H14.69L15.64 3.43L15.67 3.11C15.67 2.7 15.5 2.32 15.23 2.05L14.17 1L7.59 7.59C7.22 7.95 7 8.45 7 9V19C7 20.1 7.9 21 9 21H18C18.83 21 19.54 20.5 19.84 19.78L22.86 12.73C22.95 12.5 23 12.26 23 12V10Z" fill="currentColor"/>
@@ -292,8 +417,9 @@ const ChatAssistant: React.FC = () => {
                 </FeedbackButton>
                 
                 <FeedbackButton 
-                  className={message.feedback === 'negative' ? 'active' : ''}
-                  onClick={() => handleFeedback(message.id, 'negative')}
+                  className={message.feedback === 'negative' ? 'active' : ''} 
+                  onClick={() => handleFeedback(message.id, message.feedback === 'negative' ? null : 'negative')}
+                  aria-label="Отрицательная оценка"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M15 3H6C5.17 3 4.46 3.5 4.16 4.22L1.14 11.27C1.05 11.5 1 11.74 1 12V14C1 15.1 1.9 16 3 16H9.31L8.36 20.57L8.33 20.89C8.33 21.3 8.5 21.68 8.77 21.95L9.83 23L16.41 16.41C16.78 16.05 17 15.55 17 15V5C17 3.9 16.1 3 15 3ZM23 3V15H19V3H23Z" fill="currentColor"/>
@@ -301,60 +427,56 @@ const ChatAssistant: React.FC = () => {
                 </FeedbackButton>
                 
                 <FeedbackText>
-                  {message.feedback === 'positive' 
-                    ? 'Спасибо за положительную оценку!' 
-                    : message.feedback === 'negative' 
-                    ? 'Спасибо за отзыв! Мы работаем над улучшением.' 
-                    : 'Оцените ответ'}
+                  {message.feedback === 'positive' && 'Спасибо за положительную оценку!'}
+                  {message.feedback === 'negative' && 'Спасибо за отзыв. Мы постараемся улучшить ответы.'}
                 </FeedbackText>
               </MessageFeedback>
             )}
           </MessageWrapper>
         ))}
+        
+        {isLoading && (
+          <MessageWrapper isBot={true}>
+            <MessageContent isBot={true}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ marginRight: '8px' }}>Печатает</span>
+                <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#000', margin: '0 2px', animation: 'pulse 1s infinite' }}></span>
+                <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#000', margin: '0 2px', animation: 'pulse 1s infinite .2s' }}></span>
+                <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#000', margin: '0 2px', animation: 'pulse 1s infinite .4s' }}></span>
+              </div>
+            </MessageContent>
+          </MessageWrapper>
+        )}
+        
         <div ref={messagesEndRef} />
       </ChatMessages>
       
       <ChatInputContainer>
-        <HistoryButton>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '8px' }}>
-            <path d="M13 3C8.03 3 4 7.03 4 12H1L4.89 15.89L4.96 16.03L9 12H6C6 8.13 9.13 5 13 5C16.87 5 20 8.13 20 12C20 15.87 16.87 19 13 19C11.07 19 9.32 18.21 8.06 16.94L6.64 18.36C8.27 19.99 10.51 21 13 21C17.97 21 22 16.97 22 12C22 7.03 17.97 3 13 3ZM12 8V13L16.28 15.54L17 14.33L13.5 12.25V8H12Z" fill="currentColor"/>
-          </svg>
-          История
-        </HistoryButton>
-        
-        <ChatInput 
-          type="text" 
-          value={inputValue} 
-          onChange={(e) => setInputValue(e.target.value)} 
-          onKeyDown={handleKeyDown}
-          placeholder="Введите ваш вопрос..."
-          disabled={isLoading}
-        />
-        
-        <SendButton onClick={handleSendMessage} disabled={inputValue.trim() === '' || isLoading}>
-          {isLoading ? (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20Z" fill="currentColor"/>
-              <path d="M12 4C7.59 4 4 7.59 4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <animateTransform 
-                  attributeName="transform" 
-                  type="rotate" 
-                  from="0 12 12" 
-                  to="360 12 12" 
-                  dur="1s" 
-                  repeatCount="indefinite" 
-                />
-              </path>
-            </svg>
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', width: '100%' }}>
+          <ChatInput 
+            type="text" 
+            placeholder="Введите ваш вопрос..." 
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            disabled={isLoading}
+          />
+          
+          <SendButton type="submit" disabled={!inputValue.trim() || isLoading}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor"/>
             </svg>
-          )}
-        </SendButton>
+          </SendButton>
+        </form>
       </ChatInputContainer>
     </ChatContainer>
   );
+};
+
+ChatAssistant.defaultProps = {
+  onMessageSent: undefined,
+  onToggleHistory: undefined,
+  onRatingChange: undefined,
+  selectedChatId: null
 };
 
 export default ChatAssistant; 

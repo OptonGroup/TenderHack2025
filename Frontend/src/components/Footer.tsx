@@ -5,6 +5,10 @@ import { colors } from '../styles/theme.ts';
 const FooterContainer = styled.footer`
   background-color: ${colors.paleBlue};
   padding: 32px 24px;
+  
+  @media (max-width: 480px) {
+    padding: 24px 16px;
+  }
 `;
 
 const FooterContent = styled.div`
@@ -24,6 +28,11 @@ const FooterLinks = styled.div`
   
   @media (max-width: 768px) {
     margin-bottom: 24px;
+    width: 100%;
+  }
+  
+  @media (max-width: 480px) {
+    flex-direction: column;
   }
 `;
 
@@ -32,6 +41,15 @@ const LinkGroup = styled.div`
   
   &:last-child {
     margin-right: 0;
+  }
+  
+  @media (max-width: 768px) {
+    margin-right: 24px;
+  }
+  
+  @media (max-width: 480px) {
+    margin-right: 0;
+    margin-bottom: 20px;
   }
 `;
 
@@ -45,11 +63,19 @@ const FooterLink = styled.a`
   &:hover {
     color: ${colors.mainBlue};
   }
+  
+  @media (max-width: 480px) {
+    margin-bottom: 10px;
+  }
 `;
 
 const SupportSection = styled.div`
   display: flex;
   flex-direction: column;
+  
+  @media (max-width: 768px) {
+    width: 100%;
+  }
 `;
 
 const SupportTitle = styled.div`
@@ -59,6 +85,10 @@ const SupportTitle = styled.div`
   font-size: 14px;
   font-weight: 500;
   color: ${colors.black};
+  
+  @media (max-width: 480px) {
+    margin-bottom: 10px;
+  }
 `;
 
 const SupportIcon = styled.div`
@@ -96,6 +126,11 @@ const Copyright = styled.div`
   color: ${colors.paleBlack};
   margin-top: 32px;
   text-align: center;
+  
+  @media (max-width: 480px) {
+    margin-top: 24px;
+    font-size: 11px;
+  }
 `;
 
 const Footer: React.FC = () => {

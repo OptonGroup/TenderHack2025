@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
 import { colors } from '../styles/theme.ts';
 
@@ -10,6 +10,10 @@ const HeaderContainer = styled.header`
   padding: 0 24px;
   background-color: ${colors.white};
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  
+  @media (max-width: 768px) {
+    padding: 0 16px;
+  }
 `;
 
 const Logo = styled.div`
@@ -23,11 +27,21 @@ const LogoImage = styled.div`
   background-color: ${colors.red};
   border-radius: 4px;
   margin-right: 12px;
+  
+  @media (max-width: 480px) {
+    width: 28px;
+    height: 28px;
+    margin-right: 8px;
+  }
 `;
 
 const LogoText = styled.div`
   display: flex;
   flex-direction: column;
+  
+  @media (max-width: 480px) {
+    font-size: 14px;
+  }
 `;
 
 const LogoTitle = styled.span`
@@ -35,16 +49,41 @@ const LogoTitle = styled.span`
   font-size: 16px;
   color: ${colors.red};
   text-transform: uppercase;
+  
+  @media (max-width: 480px) {
+    font-size: 14px;
+  }
 `;
 
 const LogoSubtitle = styled.span`
   font-size: 12px;
   color: ${colors.black};
+  
+  @media (max-width: 480px) {
+    font-size: 10px;
+  }
 `;
 
-const Nav = styled.nav`
+const Nav = styled.nav<{ isOpen: boolean }>`
   display: flex;
   align-items: center;
+  
+  @media (max-width: 768px) {
+    position: fixed;
+    top: 72px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    background-color: ${colors.white};
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 16px;
+    transform: translateY(${props => props.isOpen ? '0' : '-100%'});
+    opacity: ${props => props.isOpen ? '1' : '0'};
+    visibility: ${props => props.isOpen ? 'visible' : 'hidden'};
+    transition: all 0.3s ease;
+    z-index: 100;
+  }
 `;
 
 const NavItem = styled.a`
@@ -57,12 +96,24 @@ const NavItem = styled.a`
   &:hover {
     color: ${colors.mainBlue};
   }
+  
+  @media (max-width: 768px) {
+    margin-left: 0;
+    margin-bottom: 16px;
+    font-size: 16px;
+    width: 100%;
+  }
 `;
 
 const SearchBox = styled.div`
   display: flex;
   align-items: center;
   margin-left: 24px;
+  
+  @media (max-width: 768px) {
+    margin-left: 0;
+    width: 100%;
+  }
 `;
 
 const SearchIcon = styled.div`
@@ -105,6 +156,12 @@ const NotificationBadge = styled.span`
 const UserProfile = styled.div`
   display: flex;
   align-items: center;
+  
+  @media (max-width: 480px) {
+    span {
+      display: none;
+    }
+  }
 `;
 
 const UserAvatar = styled.div`
@@ -135,6 +192,44 @@ const LoginButton = styled.button`
   &:hover {
     background-color: #c02719;
   }
+  
+  @media (max-width: 480px) {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+`;
+
+const BurgerMenu = styled.div`
+  display: none;
+  cursor: pointer;
+  
+  @media (max-width: 768px) {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 24px;
+    height: 18px;
+    margin-right: 16px;
+  }
+`;
+
+const BurgerLine = styled.span<{ isOpen: boolean }>`
+  width: 24px;
+  height: 2px;
+  background-color: ${colors.black};
+  transition: all 0.3s ease;
+  
+  &:first-child {
+    transform: ${props => props.isOpen ? 'rotate(45deg) translate(5px, 5px)' : 'rotate(0)'};
+  }
+  
+  &:nth-child(2) {
+    opacity: ${props => props.isOpen ? '0' : '1'};
+  }
+  
+  &:last-child {
+    transform: ${props => props.isOpen ? 'rotate(-45deg) translate(5px, -5px)' : 'rotate(0)'};
+  }
 `;
 
 interface HeaderProps {
@@ -144,6 +239,12 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ isLoggedIn, userName, notificationCount = 0 }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  
+  const toggleMenu = () => {
+    setIsMenuOpen(!isMenuOpen);
+  };
+  
   return (
     <HeaderContainer>
       <Logo>
@@ -154,7 +255,13 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, userName, notificationCount
         </LogoText>
       </Logo>
       
-      <Nav>
+      <BurgerMenu onClick={toggleMenu}>
+        <BurgerLine isOpen={isMenuOpen} />
+        <BurgerLine isOpen={isMenuOpen} />
+        <BurgerLine isOpen={isMenuOpen} />
+      </BurgerMenu>
+      
+      <Nav isOpen={isMenuOpen}>
         <NavItem href="#">Меню</NavItem>
         <NavItem href="#">Каталог продукции</NavItem>
         <NavItem href="#">Закупки</NavItem>

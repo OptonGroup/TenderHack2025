@@ -17,12 +17,37 @@ const PageContainer = styled.div`
 const MainContent = styled.main`
   flex: 1;
   padding: 24px 0;
+  
+  @media (max-width: 768px) {
+    padding: 16px 0;
+  }
+  
+  @media (max-width: 480px) {
+    padding: 8px 0;
+  }
+`;
+
+// Добавляем компонент для перекрытия контента при открытом меню истории на мобильных устройствах
+const Overlay = styled.div<{ isVisible: boolean }>`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  display: ${props => props.isVisible ? 'block' : 'none'};
+  
+  @media (min-width: 481px) {
+    display: none;
+  }
 `;
 
 const MainPage: React.FC = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyItems, setHistoryItems] = useState<ChatHistoryItem[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
 
   useEffect(() => {
     // Имитация проверки авторизации
@@ -50,8 +75,43 @@ const MainPage: React.FC = () => {
 
   const selectChat = (chatId: string) => {
     console.log('Selected chat:', chatId);
+    setSelectedChatId(chatId);
     // Здесь должна быть логика загрузки выбранного чата
+    // Находим чат по ID и загружаем его содержимое
+    const selectedChat = historyItems.find(item => item.id === chatId);
+    if (selectedChat) {
+      // Можно добавить дополнительную логику загрузки полной истории чата
+      console.log('Загружен чат:', selectedChat);
+    }
     setIsHistoryOpen(false);
+  };
+
+  const handleNewMessageSent = (message: string, response: string) => {
+    // Добавляем новый элемент в историю чатов
+    const newHistoryItem: ChatHistoryItem = {
+      id: Date.now().toString(),
+      question: message,
+      answer: response,
+      date: new Date().toISOString(),
+      rating: null
+    };
+    
+    setHistoryItems(prev => [newHistoryItem, ...prev]);
+  };
+
+  const handleRatingChange = (chatId: string, rating: 'positive' | 'negative' | null) => {
+    // Обновляем рейтинг чата в истории
+    setHistoryItems(prev => 
+      prev.map(item => 
+        item.id === chatId 
+          ? { ...item, rating } 
+          : item
+      )
+    );
+    
+    // Здесь можно отправить рейтинг на сервер
+    chatService.sendFeedback({ messageId: chatId, type: rating })
+      .catch(error => console.error('Failed to send feedback:', error));
   };
 
   const handleLogin = () => {
@@ -68,6 +128,11 @@ const MainPage: React.FC = () => {
     setHistoryItems([]);
   };
 
+  // Добавляем функцию для закрытия истории при клике по оверлею
+  const closeHistory = () => {
+    setIsHistoryOpen(false);
+  };
+
   return (
     <PageContainer>
       <Header 
@@ -77,8 +142,16 @@ const MainPage: React.FC = () => {
       />
       
       <MainContent>
-        <ChatAssistant />
+        <ChatAssistant 
+          onMessageSent={handleNewMessageSent}
+          onToggleHistory={toggleHistory}
+          onRatingChange={handleRatingChange}
+          selectedChatId={selectedChatId}
+        />
       </MainContent>
+      
+      {/* Оверлей для закрытия истории на мобильных устройствах */}
+      <Overlay isVisible={isHistoryOpen} onClick={closeHistory} />
       
       <ChatHistory 
         isOpen={isHistoryOpen} 
