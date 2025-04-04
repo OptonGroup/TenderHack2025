@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query, Body
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query, Body, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
@@ -18,6 +18,7 @@ from database import get_db, init_db
 import models
 import schemas
 from auth import authenticate_user, create_access_token, get_current_active_user, ACCESS_TOKEN_EXPIRE_MINUTES, get_password_hash
+from load_parquet_to_data import load_parquet_to_data
 
 app = FastAPI(title="TenderHack API", version="1.0.0")
 
@@ -621,6 +622,47 @@ async def delete_data(
     return {
         "success": True,
         "message": f"Запись с ID {data_id} успешно удалена"
+    }
+
+
+# Эндпоинт для импорта данных из parquet-файла
+@app.post("/api/import-parquet", response_model=Dict[str, Any])
+async def import_parquet(
+    background_tasks: BackgroundTasks,
+    parquet_path: str = Body("docs/dataset.parquet", description="Путь к parquet-файлу"),
+    title_column: Optional[str] = Body(None, description="Название столбца для поля title"),
+    description_column: Optional[str] = Body(None, description="Название столбца для поля description"),
+    batch_size: int = Body(1000, description="Размер пакета для загрузки"),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """
+    Импорт данных из parquet-файла в таблицу Data
+    """
+    # Функция для выполнения импорта в фоновом режиме
+    def run_import():
+        try:
+            result = load_parquet_to_data(
+                parquet_path=parquet_path,
+                title_column=title_column,
+                description_column=description_column,
+                batch_size=batch_size
+            )
+            print(f"Импорт завершен: {result['message']}")
+        except Exception as e:
+            print(f"Ошибка при импорте: {str(e)}")
+    
+    # Запускаем импорт в фоновом режиме
+    background_tasks.add_task(run_import)
+    
+    return {
+        "success": True,
+        "message": "Импорт данных запущен в фоновом режиме",
+        "params": {
+            "parquet_path": parquet_path,
+            "title_column": title_column,
+            "description_column": description_column,
+            "batch_size": batch_size
+        }
     }
 
 
