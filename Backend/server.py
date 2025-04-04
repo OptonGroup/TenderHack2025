@@ -1,8 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import uvicorn
-from datetime import timedelta
+from datetime import timedelta, datetime
+from typing import List, Optional
+import os
+import shutil
+from uuid import uuid4
 
 from database import get_db, init_db
 import models
@@ -100,12 +104,324 @@ async def read_users_me(current_user: models.User = Depends(get_current_active_u
     return current_user
 
 
+@app.get("/api/users/{user_id}", response_model=schemas.User)
+async def get_user_by_id(user_id: int, db: Session = Depends(get_db)):
+    """
+    Получение пользователя по ID
+    """
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+    return user
+
+
+# Эндпоинты для работы с категориями
+@app.get("/api/categories", response_model=List[schemas.Category])
+async def get_categories(db: Session = Depends(get_db)):
+    """
+    Получение списка всех категорий
+    """
+    categories = db.query(models.Category).all()
+    return categories
+
+
+@app.post("/api/categories", response_model=schemas.Category)
+async def create_category(category: schemas.CategoryCreate, 
+                         current_user: models.User = Depends(get_current_active_user), 
+                         db: Session = Depends(get_db)):
+    """
+    Создание новой категории
+    """
+    new_category = models.Category(**category.dict())
+    db.add(new_category)
+    db.commit()
+    db.refresh(new_category)
+    return new_category
+
+
+@app.get("/api/categories/{category_id}", response_model=schemas.Category)
+async def get_category(category_id: int, db: Session = Depends(get_db)):
+    """
+    Получение категории по ID
+    """
+    category = db.query(models.Category).filter(models.Category.id == category_id).first()
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Категория не найдена"
+        )
+    return category
+
+
+# Эндпоинты для работы с тендерами
+@app.get("/api/tenders", response_model=List[schemas.Tender])
+async def get_tenders(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """
+    Получение списка всех тендеров
+    """
+    tenders = db.query(models.Tender).offset(skip).limit(limit).all()
+    return tenders
+
+
+@app.post("/api/tenders", response_model=schemas.Tender)
+async def create_tender(tender: schemas.TenderCreate, 
+                       current_user: models.User = Depends(get_current_active_user), 
+                       db: Session = Depends(get_db)):
+    """
+    Создание нового тендера
+    """
+    new_tender = models.Tender(**tender.dict(), creator_id=current_user.id)
+    db.add(new_tender)
+    db.commit()
+    db.refresh(new_tender)
+    return new_tender
+
+
+@app.get("/api/tenders/{tender_id}", response_model=schemas.TenderDetail)
+async def get_tender(tender_id: int, db: Session = Depends(get_db)):
+    """
+    Получение информации о тендере по ID
+    """
+    tender = db.query(models.Tender).filter(models.Tender.id == tender_id).first()
+    if not tender:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Тендер не найден"
+        )
+    return tender
+
+
+@app.put("/api/tenders/{tender_id}", response_model=schemas.Tender)
+async def update_tender(tender_id: int, 
+                       tender_data: schemas.TenderUpdate, 
+                       current_user: models.User = Depends(get_current_active_user), 
+                       db: Session = Depends(get_db)):
+    """
+    Обновление информации о тендере
+    """
+    tender = db.query(models.Tender).filter(models.Tender.id == tender_id).first()
+    if not tender:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Тендер не найден"
+        )
+    
+    # Проверяем, что пользователь является создателем тендера
+    if tender.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет прав для обновления этого тендера"
+        )
+    
+    # Обновляем поля тендера, если они предоставлены
+    update_data = tender_data.dict(exclude_unset=True)
+    
+    if "category_id" in update_data:
+        # Проверяем, существует ли указанная категория
+        category = db.query(models.Category).filter(models.Category.id == update_data["category_id"]).first()
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Указанная категория не найдена"
+            )
+    
+    for key, value in update_data.items():
+        setattr(tender, key, value)
+    
+    db.commit()
+    db.refresh(tender)
+    
+    return tender
+
+
+# Эндпоинты для работы с заявками
+@app.get("/api/bids", response_model=List[schemas.Bid])
+async def get_user_bids(current_user: models.User = Depends(get_current_active_user), 
+                       db: Session = Depends(get_db)):
+    """
+    Получение списка заявок текущего пользователя
+    """
+    bids = db.query(models.Bid).filter(models.Bid.bidder_id == current_user.id).all()
+    return bids
+
+
+@app.post("/api/bids", response_model=schemas.Bid)
+async def create_bid(bid: schemas.BidCreate, 
+                    current_user: models.User = Depends(get_current_active_user), 
+                    db: Session = Depends(get_db)):
+    """
+    Создание новой заявки на тендер
+    """
+    new_bid = models.Bid(**bid.dict(), bidder_id=current_user.id)
+    db.add(new_bid)
+    db.commit()
+    db.refresh(new_bid)
+    return new_bid
+
+
+@app.get("/api/tenders/{tender_id}/bids", response_model=List[schemas.Bid])
+async def get_tender_bids(tender_id: int, 
+                         current_user: models.User = Depends(get_current_active_user), 
+                         db: Session = Depends(get_db)):
+    """
+    Получение списка заявок на тендер
+    """
+    tender = db.query(models.Tender).filter(models.Tender.id == tender_id).first()
+    if not tender:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Тендер не найден"
+        )
+    
+    # Проверяем, является ли пользователь создателем тендера
+    if tender.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет прав для просмотра заявок на этот тендер"
+        )
+    
+    bids = db.query(models.Bid).filter(models.Bid.tender_id == tender_id).all()
+    return bids
+
+
+@app.put("/api/bids/{bid_id}/status", response_model=schemas.Bid)
+async def update_bid_status(bid_id: int, 
+                           status: str, 
+                           current_user: models.User = Depends(get_current_active_user), 
+                           db: Session = Depends(get_db)):
+    """
+    Обновление статуса заявки
+    """
+    bid = db.query(models.Bid).filter(models.Bid.id == bid_id).first()
+    if not bid:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка не найдена"
+        )
+    
+    tender = db.query(models.Tender).filter(models.Tender.id == bid.tender_id).first()
+    
+    # Проверяем, является ли пользователь создателем тендера
+    if tender.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет прав для изменения статуса этой заявки"
+        )
+    
+    # Проверяем валидность статуса
+    if status not in ["pending", "accepted", "rejected"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Недопустимый статус заявки"
+        )
+    
+    bid.status = status
+    db.commit()
+    db.refresh(bid)
+    return bid
+
+
+# Эндпоинты для работы с документами
+@app.post("/api/documents", response_model=schemas.Document)
+async def upload_document(
+    tender_id: int = Form(...),
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Загрузка документа для тендера
+    """
+    tender = db.query(models.Tender).filter(models.Tender.id == tender_id).first()
+    if not tender:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Указанный тендер не найден"
+        )
+    
+    if tender.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет прав для загрузки документов к этому тендеру"
+        )
+    
+    upload_dir = f"uploads/tenders/{tender_id}"
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    # Генерируем уникальное имя файла
+    file_extension = os.path.splitext(file.filename)[1]
+    unique_filename = f"{uuid4()}{file_extension}"
+    file_path = f"{upload_dir}/{unique_filename}"
+    
+    # Сохраняем файл
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при сохранении файла: {str(e)}"
+        )
+    
+    # Создаем запись о документе в базе данных
+    new_document = models.Document(
+        filename=file.filename,
+        file_path=file_path,
+        file_type=file.content_type,
+        file_size=os.path.getsize(file_path),
+        tender_id=tender_id
+    )
+    
+    db.add(new_document)
+    db.commit()
+    db.refresh(new_document)
+    
+    return new_document
+
+
+@app.get("/api/documents/{document_id}", response_model=schemas.Document)
+async def get_document(document_id: int, db: Session = Depends(get_db)):
+    """
+    Получение информации о документе по ID
+    """
+    document = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Документ не найден"
+        )
+    
+    return document
+
+
+@app.get("/api/tenders/{tender_id}/documents", response_model=List[schemas.Document])
+async def get_tender_documents(tender_id: int, db: Session = Depends(get_db)):
+    """
+    Получение списка документов для тендера
+    """
+    tender = db.query(models.Tender).filter(models.Tender.id == tender_id).first()
+    if not tender:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Тендер не найден"
+        )
+    
+    documents = db.query(models.Document).filter(models.Document.tender_id == tender_id).all()
+    return documents
+
+
 @app.on_event("startup")
 async def startup_event():
     """
     Инициализация базы данных при запуске приложения
     """
     init_db()
+    
+    # Создаем директорию для загрузки файлов
+    os.makedirs("uploads/tenders", exist_ok=True)
 
 
 if __name__ == '__main__':
