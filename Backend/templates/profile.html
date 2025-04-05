@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block title %}Профиль пользователя - Портал Поставщиков{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3">
+        <div class="card mb-4">
+            <div class="card-body text-center">
+                <img src="/static/img/profile-avatar.png" alt="Фото профиля" class="rounded-circle img-fluid mb-3" style="width: 150px;">
+                <h5 class="card-title">Иванов Иван</h5>
+                <p class="text-muted">Поставщик</p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary">Редактировать профиль</button>
+                    <button class="btn btn-outline-secondary">Настройки</button>
+                </div>
+            </div>
+        </div>
+        <div class="card mb-4">
+            <div class="card-header">Навигация</div>
+            <div class="list-group list-group-flush">
+                <a href="#" class="list-group-item list-group-item-action active">
+                    <i class="fas fa-tachometer-alt me-2"></i> Панель управления
+                </a>
+                <a href="#" class="list-group-item list-group-item-action">
+                    <i class="fas fa-file-contract me-2"></i> Контракты
+                </a>
+                <a href="#" class="list-group-item list-group-item-action">
+                    <i class="fas fa-gavel me-2"></i> Тендеры
+                </a>
+                <a href="#" class="list-group-item list-group-item-action">
+                    <i class="fas fa-building me-2"></i> Моя организация
+                </a>
+                <a href="#" class="list-group-item list-group-item-action">
+                    <i class="fas fa-cogs me-2"></i> Настройки
+                </a>
+                <a href="#" class="list-group-item list-group-item-action text-danger">
+                    <i class="fas fa-sign-out-alt me-2"></i> Выйти
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-9">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Статистика</h5>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        За последний месяц
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#">За неделю</a></li>
+                        <li><a class="dropdown-item" href="#">За месяц</a></li>
+                        <li><a class="dropdown-item" href="#">За квартал</a></li>
+                        <li><a class="dropdown-item" href="#">За год</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <div class="stat-card bg-primary text-white p-3 rounded">
+                            <h3 class="stat-number">12</h3>
+                            <p class="stat-title mb-0">Активные контракты</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="stat-card bg-success text-white p-3 rounded">
+                            <h3 class="stat-number">5</h3>
+                            <p class="stat-title mb-0">Выигранные тендеры</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="stat-card bg-warning text-white p-3 rounded">
+                            <h3 class="stat-number">8</h3>
+                            <p class="stat-title mb-0">Ожидающие решения</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="stat-card bg-danger text-white p-3 rounded">
+                            <h3 class="stat-number">3</h3>
+                            <p class="stat-title mb-0">Отклоненные заявки</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <canvas id="statisticsChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Активные тендеры</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>№</th>
+                                <th>Название</th>
+                                <th>Заказчик</th>
+                                <th>Сумма</th>
+                                <th>Дедлайн</th>
+                                <th>Статус</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1</td>
+                                <td>Поставка компьютерного оборудования</td>
+                                <td>АО "ТехноСтар"</td>
+                                <td>₽1,250,000</td>
+                                <td>15.04.2025</td>
+                                <td><span class="badge bg-warning text-dark">В процессе</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary">Просмотр</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>2</td>
+                                <td>Услуги по ремонту офисных помещений</td>
+                                <td>ООО "Стройкомплекс"</td>
+                                <td>₽3,800,000</td>
+                                <td>22.04.2025</td>
+                                <td><span class="badge bg-success">Одобрено</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary">Просмотр</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>3</td>
+                                <td>Поставка канцелярских товаров</td>
+                                <td>ГБОУ СОШ №123</td>
+                                <td>₽450,000</td>
+                                <td>10.04.2025</td>
+                                <td><span class="badge bg-danger">Просрочено</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary">Просмотр</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-end mt-3">
+                    <a href="#" class="btn btn-outline-primary">Показать все</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Последние уведомления</h5>
+            </div>
+            <div class="card-body">
+                <div class="notification-item d-flex align-items-start mb-3 pb-3 border-bottom">
+                    <div class="notification-icon bg-info text-white rounded-circle p-2 me-3">
+                        <i class="fas fa-bell"></i>
+                    </div>
+                    <div class="notification-content">
+                        <h6 class="mb-1">Новый тендер</h6>
+                        <p class="text-muted mb-1">Опубликован новый тендер, соответствующий вашему профилю: "Поставка медицинского оборудования"</p>
+                        <small class="text-muted">2 часа назад</small>
+                    </div>
+                </div>
+                <div class="notification-item d-flex align-items-start mb-3 pb-3 border-bottom">
+                    <div class="notification-icon bg-success text-white rounded-circle p-2 me-3">
+                        <i class="fas fa-check"></i>
+                    </div>
+                    <div class="notification-content">
+                        <h6 class="mb-1">Заявка одобрена</h6>
+                        <p class="text-muted mb-1">Ваша заявка на участие в тендере "Поставка компьютерного оборудования" одобрена.</p>
+                        <small class="text-muted">1 день назад</small>
+                    </div>
+                </div>
+                <div class="notification-item d-flex align-items-start">
+                    <div class="notification-icon bg-warning text-white rounded-circle p-2 me-3">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="notification-content">
+                        <h6 class="mb-1">Напоминание о дедлайне</h6>
+                        <p class="text-muted mb-1">До окончания приема заявок на тендер "Услуги по ремонту офисных помещений" осталось 3 дня.</p>
+                        <small class="text-muted">2 дня назад</small>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer text-end">
+                <a href="#" class="btn btn-sm btn-outline-primary">Все уведомления</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const ctx = document.getElementById('statisticsChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн'],
+                datasets: [{
+                    label: 'Участие в тендерах',
+                    data: [12, 19, 15, 17, 14, 23],
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }, {
+                    label: 'Выигранные тендеры',
+                    data: [5, 7, 4, 9, 6, 12],
+                    backgroundColor: 'rgba(75, 192, 92, 0.2)',
+                    borderColor: 'rgba(75, 192, 92, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %} 

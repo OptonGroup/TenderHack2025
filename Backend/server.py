@@ -1,6 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query, Body, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query, Body, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
 from sqlalchemy import func
@@ -23,6 +26,12 @@ from load_parquet_to_data import load_parquet_to_data
 
 app = FastAPI(title="TenderHack API", version="1.0.0")
 
+# Монтируем статические файлы
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Настраиваем шаблоны
+templates = Jinja2Templates(directory="templates")
+
 # Добавляем middleware для CORS
 app.add_middleware(
     CORSMiddleware,
@@ -32,6 +41,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Главная страница
+@app.get("/", response_class=HTMLResponse)
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+# Страница входа
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+# Страница регистрации
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
+
+# Страница профиля
+@app.get("/profile", response_class=HTMLResponse)
+async def profile_page(request: Request):
+    return templates.TemplateResponse("profile.html", {"request": request})
 
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Портал Поставщиков</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.3.0/css/all.min.css">
+</head>
+<body>
+    <header class="header">
+        <nav class="navbar navbar-expand-lg navbar-light">
+            <div class="container">
+                <a class="navbar-brand d-flex align-items-center" href="/">
+                    <img src="img/logo-large.png" alt="Портал Поставщиков" class="logo d-none d-md-block">
+                    <img src="img/logo-small.png" alt="Портал Поставщиков" class="logo d-md-none">
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item">
+                            <a class="nav-link" href="#">
+                                <i class="fas fa-bars me-2"></i>Меню
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#">
+                                <i class="fas fa-question-circle me-2"></i>Центр поддержки
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#">
+                                <i class="fas fa-shopping-cart me-2"></i>Корзина
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#">
+                                <i class="fas fa-map-marker-alt me-2"></i>Московская область
+                            </a>
+                        </li>
+                    </ul>
+                    <form class="d-flex me-3">
+                        <div class="input-group">
+                            <input class="form-control" type="search" placeholder="Поиск...">
+                            <button class="btn btn-outline-secondary" type="submit">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                    </form>
+                    <div class="language-selector me-3">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="languageDropdown" data-bs-toggle="dropdown">
+                            <img src="img/ru-flag.svg" alt="RU" class="flag-icon">
+                        </button>
+                        <ul class="dropdown-menu" aria-labelledby="languageDropdown">
+                            <li><a class="dropdown-item" href="#"><img src="img/ru-flag.svg" alt="RU" class="flag-icon"> Русский</a></li>
+                            <li><a class="dropdown-item" href="#"><img src="img/en-flag.svg" alt="EN" class="flag-icon"> English</a></li>
+                        </ul>
+                    </div>
+                    <div class="auth-buttons">
+                        <a href="/login" class="btn btn-outline-primary me-2">Войти</a>
+                        <a href="/register" class="btn btn-primary">Зарегистрироваться</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container my-5">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="welcome-section">
+                    <h1 class="display-4 mb-4">Добро пожаловать на Портал Поставщиков</h1>
+                    <p class="lead">Единая платформа для участия в тендерах, поиска заказов и взаимодействия с заказчиками.</p>
+                    <div class="mt-4">
+                        <a href="/register" class="btn btn-primary btn-lg me-3">Начать работу</a>
+                        <a href="#" class="btn btn-outline-secondary btn-lg">Узнать больше</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card login-card">
+                    <div class="card-body">
+                        <h2 class="card-title text-center mb-4">Вход в систему</h2>
+                        <form id="loginForm">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">Имя пользователя</label>
+                                <input type="text" class="form-control" id="username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Пароль</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="password" required>
+                                    <button class="btn btn-outline-secondary toggle-password" type="button">
+                                        <i class="fa fa-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="rememberMe">
+                                <label class="form-check-label" for="rememberMe">Запомнить меня</label>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Войти</button>
+                            <div class="text-center mt-3">
+                                <a href="#" class="text-decoration-none">Забыли пароль?</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer mt-auto py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="d-flex flex-wrap">
+                        <a href="#" class="text-decoration-none me-4 mb-2">О портале</a>
+                        <a href="#" class="text-decoration-none me-4 mb-2">Поставщикам</a>
+                        <a href="#" class="text-decoration-none me-4 mb-2">Новости</a>
+                        <a href="#" class="text-decoration-none me-4 mb-2">Контакты</a>
+                        <a href="#" class="text-decoration-none me-4 mb-2">Карта сайта</a>
+                    </div>
+                    <div class="mt-3">
+                        <p class="text-muted">© 2017-2025 2.0.5<br>Портал Поставщиков работает в соответствии с 44-ФЗ</p>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="d-flex flex-column align-items-end">
+                        <div class="mb-3">
+                            <a href="#" class="text-decoration-none d-flex align-items-center mb-2">
+                                <i class="fas fa-headset me-2 fs-5"></i> Служба качества
+                            </a>
+                            <a href="#" class="text-decoration-none d-flex align-items-center">
+                                <i class="fas fa-envelope me-2 fs-5"></i> Написать в службу поддержки
+                            </a>
+                        </div>
+                        <div class="social-icons d-flex">
+                            <a href="#" class="social-icon me-2"><i class="fab fa-facebook-f"></i></a>
+                            <a href="#" class="social-icon me-2"><i class="fab fa-twitter"></i></a>
+                            <a href="#" class="social-icon me-2"><i class="fab fa-instagram"></i></a>
+                            <a href="#" class="social-icon me-2"><i class="fab fa-vk"></i></a>
+                            <a href="#" class="social-icon"><i class="fab fa-youtube"></i></a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- GSAP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.4/gsap.min.js"></script>
+    <!-- Кастомные скрипты -->
+    <script src="js/auth.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html> 

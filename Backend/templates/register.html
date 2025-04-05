@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Регистрация - Портал Поставщиков{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card register-card">
+            <div class="card-body p-5">
+                <h1 class="card-title text-center mb-4">Регистрация</h1>
+                <form id="registerForm" class="register-form">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Имя пользователя</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                        <div class="form-text">Имя пользователя должно быть уникальным.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Пароль</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="password" name="password" required>
+                            <button class="btn btn-outline-secondary toggle-password" type="button">
+                                <i class="fa fa-eye"></i>
+                            </button>
+                        </div>
+                        <div id="passwordFeedback" class="form-text text-danger d-none"></div>
+                        <div class="form-text">
+                            Пароль должен содержать минимум 8 символов, включая заглавные и строчные буквы, 
+                            цифры и специальные символы.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirmPassword" class="form-label">Подтверждение пароля</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" required>
+                            <button class="btn btn-outline-secondary toggle-password" type="button">
+                                <i class="fa fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-4 form-check">
+                        <input type="checkbox" class="form-check-input" id="agreeTerms" name="agreeTerms" required>
+                        <label class="form-check-label" for="agreeTerms">
+                            Я согласен с <a href="#" class="text-decoration-none">условиями использования</a> и <a href="#" class="text-decoration-none">политикой конфиденциальности</a>
+                        </label>
+                    </div>
+                    <div class="alert alert-danger d-none" id="registerError"></div>
+                    <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">Зарегистрироваться</button>
+                    <p class="text-center mt-3">
+                        Уже есть аккаунт? <a href="/login" class="fw-bold text-decoration-none">Войти</a>
+                    </p>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
