@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Портал Поставщиков{% endblock %}
+
+{% block content %}
+<div class="row align-items-center gx-5">
+    <div class="col-lg-7">
+        <div class="welcome-section mb-5 mb-lg-0">
+            <h1 class="welcome-title">Добро пожаловать на Портал Поставщиков</h1>
+            <p class="lead my-4">Единая площадка для участия в тендерах, размещения заказов и взаимодействия с государственными заказчиками. Упростите свой путь к государственным контрактам вместе с нами.</p>
+            <div class="d-grid gap-2 d-md-flex justify-content-md-start mt-4">
+                <a href="/register" class="btn btn-primary btn-lg me-md-2">Зарегистрироваться</a>
+                <a href="#" class="btn btn-outline-secondary btn-lg">Узнать больше</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card login-card">
+            <div class="card-body p-4">
+                <h2 class="card-title text-center mb-4">Вход в систему</h2>
+                <form id="loginForm" class="login-form">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Имя пользователя</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Пароль</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="password" name="password" required>
+                            <button class="btn btn-outline-secondary toggle-password" type="button">
+                                <i class="fa fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="rememberMe" name="rememberMe">
+                        <label class="form-check-label" for="rememberMe">Запомнить меня</label>
+                    </div>
+                    <div class="alert alert-danger d-none" id="loginError"></div>
+                    <button type="submit" class="btn btn-primary w-100">Войти</button>
+                    <div class="text-center mt-3">
+                        <a href="#" class="text-decoration-none">Забыли пароль?</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

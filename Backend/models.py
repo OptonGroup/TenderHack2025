@@ -78,7 +78,10 @@ class Document(Base):
     file_type = Column(String(50), nullable=True)
     file_size = Column(Integer, nullable=True)
     tender_id = Column(Integer, ForeignKey("tenders.id"))
+    uploader_id = Column(Integer, ForeignKey("users.id"))
+    
     tender = relationship("Tender", back_populates="documents")
+    uploader = relationship("User", back_populates="documents")
 
 
 class ChatHistory(Base):
