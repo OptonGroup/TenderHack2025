@@ -1,86 +1,89 @@
 """
-Модуль для утилитных функций
+Модуль для обработки текста и анализа запросов пользователей Портала поставщиков
 """
 
-import pandas as pd  # Для работы с табличными данными
-import nltk  # Библиотека для обработки естественного языка
-import re  # Для работы с регулярными выражениями
-from difflib import get_close_matches  # Для нечеткого поиска слов
-from nltk.tokenize import word_tokenize, sent_tokenize  # Для разбиения текста на токены и предложения
-from nltk.corpus import stopwords  # Для получения списка стоп-слов
-from nltk.stem import SnowballStemmer  # Для стемминга слов
-from nltk.util import ngrams  # Для генерации n-грамм
-import string  # Для работы со строками
-import pymorphy2  # Для морфологического анализа
-from collections import Counter  # Для подсчета частот
+import pandas as pd
+import nltk
+import re
+from difflib import get_close_matches
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.corpus import stopwords
+from nltk.stem import SnowballStemmer
+from nltk.util import ngrams
+import pymorphy2
+from collections import Counter
+import numpy as np
 
-# Скачиваем необходимые ресурсы NLTK при необходимости
+# Скачиваем необходимые ресурсы NLTK
 try:
     nltk.data.find('corpora/stopwords')
 except LookupError:
-    print("Загружаем 'stopwords' для NLTK...")
     nltk.download('stopwords')
-
 
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
-    print("Загружаем 'punkt' для NLTK...")
     nltk.download('punkt')
-
-
-try:
-    nltk.data.find('tokenizers/punkt_tab')
-except LookupError:
-    print("Загружаем 'punkt_tab' для NLTK...")
-    nltk.download('punkt_tab')
-
 
 class TextProcessor:
     """
-    Класс для предварительной обработки текста с расширенными возможностями
+    Класс для предварительной обработки текста запросов пользователей Портала поставщиков
     """
     def __init__(self):
-        self.stemmer = SnowballStemmer('russian')  # Инициализация стеммера для русского языка
+        # Инициализация стеммера для русского языка
+        self.stemmer = SnowballStemmer('russian')
+        
+        # Получение списка русских стоп-слов
         try:
-            self.stop_words = set(stopwords.words('russian'))  # Получение списка русских стоп-слов
-            # Исключаем из стоп-слов негативные частицы и важные слова для определения контекста
-            self.stop_words -= {'не', 'нет', 'никак', 'ошибка', 'проблема'}
+            self.stop_words = set(stopwords.words('russian'))
+            # Исключаем важные негативные частицы и слова, определяющие контекст
+            self.stop_words -= {'не', 'нет', 'без', 'ошибка', 'проблема'}
         except LookupError:
-            print("Критическая ошибка: не удалось загрузить стоп-слова NLTK.")
+            print("Не удалось загрузить стоп-слова NLTK")
             self.stop_words = set()
             
-        self.vocabulary = set()  # Словарь для исправления опечаток
-        self.ngram_vocabulary = {}  # Словарь для хранения n-грамм
-        
         # Инициализация морфологического анализатора
         try:
             self.morph = pymorphy2.MorphAnalyzer()
         except:
-            print("Не удалось инициализировать PyMorphy2. Будет использован только стемминг.")
+            print("Не удалось инициализировать PyMorphy2")
             self.morph = None
             
-        # Словарь технических терминов, которые нужно сохранять целиком
-        self.tech_terms = {
-            'контрактная система', 'счет', 'ошибка', 'проблема', 'не удается', 
-            'не работает', 'баг', 'интерфейс', 'документация', 'установка', 
-            'настройка', 'руководство', 'инструкция'
+        # Словари для хранения словаря и n-грамм
+        self.vocabulary = set()
+        self.ngram_vocabulary = {}
+        
+        # Словари для обработки аббревиатур
+        self.abbreviations = {}  # аббревиатура -> полная форма
+        self.full_forms = {}     # полная форма -> аббревиатура
+        
+        # Определение предметных областей и ключевых сущностей Портала поставщиков
+        self.domain_entities = {
+            'документы': {'упд', 'универсальный передаточный документ', 'накладная', 'счет', 'счет-фактура', 
+                         'акт', 'договор', 'контракт', 'оферта', 'заявка'},
+            'роли': {'заказчик', 'поставщик', 'исполнитель', 'закупщик', 'покупатель', 'продавец', 'получатель', 'отправитель'},
+            'действия': {'разблокировать', 'заблокировать', 'зарегистрировать', 'подписать', 'отправить', 'получить', 
+                         'создать', 'удалить', 'изменить', 'отклонить', 'согласовать'},
+            'проблемы': {'ошибка', 'проблема', 'не работает', 'не удается', 'не получается', 'отсутствует', 
+                         'недоступен', 'отказ', 'сбой', 'неисправность'},
+            'компоненты': {'портал', 'сайт', 'система', 'личный кабинет', 'реестр', 'каталог', 'профиль'}
         }
         
-        # Автоматически найденные аббревиатуры и их полные формы
-        self.abbreviations = {}  # Словарь для хранения пар аббревиатура -> полная форма
-        self.full_forms = {}     # Словарь для хранения пар полная форма -> аббревиатура
+        # Общий набор сущностей для быстрого поиска
+        self.all_entities = set()
+        for entity_set in self.domain_entities.values():
+            self.all_entities.update(entity_set)
 
     def build_vocabulary(self, texts):
         """
         Создание словаря слов и n-грамм для предобработки текста
+        
+        Args:
+            texts (List[str]): Список текстов для анализа
         """
         all_words = []
         bigrams_list = []
         trigrams_list = []
-        
-        # Для автоматического обнаружения аббревиатур
-        potential_abbr_patterns = []
         
         for text in texts:
             if pd.isna(text):
@@ -89,59 +92,51 @@ class TextProcessor:
             # Предварительная нормализация текста
             text = str(text).lower()
             
-            # Поиск аббревиатур и их полных форм
+            # Поиск и извлечение аббревиатур
             self._extract_abbreviations(text)
             
-            text = re.sub(r'[^\w\s]', ' ', text)  # Удаляем знаки пунктуации
+            # Очистка текста от пунктуации
+            clean_text = re.sub(r'[^\w\s]', ' ', text)
             
-            # Токенизация для отдельных слов
-            words = word_tokenize(text)
+            # Токенизация текста
+            words = word_tokenize(clean_text)
             all_words.extend(words)
             
-            # Создаем биграммы и триграммы
+            # Создаем n-граммы для улучшения качества поиска
             if len(words) > 1:
                 bigrams_list.extend([' '.join(bg) for bg in list(ngrams(words, 2))])
             if len(words) > 2:
                 trigrams_list.extend([' '.join(tg) for tg in list(ngrams(words, 3))])
         
-        # Формируем словарь уникальных слов
+        # Сохраняем уникальные слова в словарь
         self.vocabulary = set(all_words)
         
-        # Формируем словарь часто встречающихся n-грамм (биграммы и триграммы)
+        # Подсчитываем частоту n-грамм
         bigram_counter = Counter(bigrams_list)
         trigram_counter = Counter(trigrams_list)
         
-        # Сохраняем только n-граммы, которые встречаются хотя бы 2 раза
+        # Сохраняем только часто встречающиеся n-граммы
         self.ngram_vocabulary = {
             'bigrams': {bg for bg, count in bigram_counter.items() if count >= 2},
             'trigrams': {tg for tg, count in trigram_counter.items() if count >= 2}
         }
         
-        # Добавляем технические термины в словарь n-грамм
-        for term in self.tech_terms:
-            words = term.split()
+        # Добавляем предметные сущности и термины в словарь n-грамм
+        for entity in self.all_entities:
+            words = entity.split()
             if len(words) == 2:
-                self.ngram_vocabulary['bigrams'].add(term)
+                self.ngram_vocabulary['bigrams'].add(entity)
             elif len(words) == 3:
-                self.ngram_vocabulary['trigrams'].add(term)
-        
-        # Добавляем найденные полные формы аббревиатур в словарь n-грамм
-        for full_form in self.full_forms:
-            words = full_form.split()
-            if len(words) == 2:
-                self.ngram_vocabulary['bigrams'].add(full_form)
-            elif len(words) == 3:
-                self.ngram_vocabulary['trigrams'].add(full_form)
-            elif len(words) > 3:
-                # Добавляем многословные выражения как отдельные термины
-                self.tech_terms.add(full_form)
+                self.ngram_vocabulary['trigrams'].add(entity)
 
     def _extract_abbreviations(self, text):
         """
-        Извлекает аббревиатуры и их полные формы из текста
+        Извлечение аббревиатур и их полных форм из текста
+        
+        Args:
+            text (str): Текст для анализа
         """
-        # Паттерны для поиска аббревиатур
-        # 1. Аббревиатура в скобках: "универсальный передаточный документ (УПД)"
+        # Паттерн 1: "полная форма (АББР)"
         pattern1 = r'([а-яА-Яa-zA-Z\s]+)\s+\(([А-ЯA-Z]{2,})\)'
         matches1 = re.findall(pattern1, text)
         for full_form, abbr in matches1:
@@ -150,7 +145,7 @@ class TextProcessor:
             self.abbreviations[abbr] = full_form
             self.full_forms[full_form] = abbr
             
-        # 2. Полная форма в скобках: "УПД (универсальный передаточный документ)"
+        # Паттерн 2: "АББР (полная форма)"
         pattern2 = r'([А-ЯA-Z]{2,})\s+\(([а-яА-Яa-zA-Z\s]+)\)'
         matches2 = re.findall(pattern2, text)
         for abbr, full_form in matches2:
@@ -159,195 +154,260 @@ class TextProcessor:
             self.abbreviations[abbr] = full_form
             self.full_forms[full_form] = abbr
         
-        # 3. Автоматическое формирование аббревиатур из последовательностей слов
-        # Разбиваем текст на предложения
+        # Поиск потенциальных аббревиатур в тексте
         sentences = sent_tokenize(text)
         for sentence in sentences:
             words = word_tokenize(sentence)
-            for i in range(len(words) - 2):  # Минимум 3 слова для аббревиатуры
-                # Проверяем, что слова начинаются с заглавной буквы
+            
+            # Ищем последовательности из заглавных букв
+            for i in range(len(words) - 2):
                 if all(word and word[0].isupper() for word in words[i:i+3] if word):
-                    # Формируем потенциальную аббревиатуру из первых букв
+                    # Формируем потенциальную аббревиатуру
                     potential_abbr = ''.join(word[0].upper() for word in words[i:i+3] if word)
                     if len(potential_abbr) >= 2 and potential_abbr.isupper():
                         full_form = ' '.join(words[i:i+3]).lower()
-                        # Проверяем, что аббревиатура находится где-то рядом в тексте
+                        # Проверяем, есть ли аббревиатура в тексте
                         if potential_abbr in sentence.upper():
                             self.abbreviations[potential_abbr] = full_form
                             self.full_forms[full_form] = potential_abbr
 
-    def _get_abbreviation(self, text):
-        """
-        Получает аббревиатуру для текста, если это полная форма
-        """
-        text_lower = text.lower()
-        if text_lower in self.full_forms:
-            return self.full_forms[text_lower]
-        
-        # Генерируем потенциальную аббревиатуру из первых букв слов
-        words = text_lower.split()
-        if len(words) >= 2:
-            potential_abbr = ''.join(word[0].upper() for word in words if word)
-            if len(potential_abbr) >= 2:
-                return potential_abbr
-        return None
-
-    def _get_full_form(self, text):
-        """
-        Получает полную форму для аббревиатуры
-        """
-        text_upper = text.upper()
-        if text_upper in self.abbreviations:
-            return self.abbreviations[text_upper]
-        return None
-
-    def _expand_query_with_abbreviations(self, text):
-        """
-        Расширяет запрос, добавляя аббревиатуры и полные формы
-        """
-        expanded_terms = []
-        words = word_tokenize(text.lower())
-        
-        # Проверяем каждое слово на аббревиатуру
-        for word in words:
-            if word.isupper() and len(word) >= 2:
-                # Это может быть аббревиатура
-                full_form = self._get_full_form(word)
-                if full_form:
-                    expanded_terms.append(full_form.replace(' ', '_'))
-            
-        # Проверяем n-граммы на полные формы
-        for n in range(2, 5):  # Проверяем от биграмм до 4-грамм
-            if len(words) >= n:
-                for i in range(len(words) - n + 1):
-                    phrase = ' '.join(words[i:i+n])
-                    abbr = self._get_abbreviation(phrase)
-                    if abbr:
-                        expanded_terms.append(abbr)
-        
-        return expanded_terms
-
     def correct_spelling(self, word, cutoff=0.8):
         """
-        Исправление опечаток с помощью алгоритма Левенштейна (difflib)
+        Исправление опечаток с использованием словаря
+        
+        Args:
+            word (str): Слово для проверки
+            cutoff (float): Порог сходства (от 0 до 1)
+            
+        Returns:
+            str: Исправленное слово или исходное, если подходящего варианта не найдено
         """
         if not self.vocabulary or word in self.vocabulary:
             return word
 
-        # Используем get_close_matches для нахождения похожих слов
+        # Поиск ближайших по написанию слов
         matches = get_close_matches(word, self.vocabulary, n=1, cutoff=cutoff)
         return matches[0] if matches else word
 
-    def extract_entities(self, text):
-        """
-        Выделение технических сущностей из текста
-        """
-        entities = []
-        
-        # Проверяем на наличие технических терминов
-        for term in self.tech_terms:
-            if term in text.lower():
-                entities.append(term)
-                
-        # Ищем паттерны ошибок (например, коды ошибок)
-        error_codes = re.findall(r'(ошибка|error)[:\s]+[A-Za-z0-9]+', text.lower())
-        if error_codes:
-            entities.extend(error_codes)
-            
-        return entities
-
     def lemmatize(self, token):
         """
-        Лемматизация с помощью PyMorphy2
-        """
-        if not self.morph:
-            return self.stemmer.stem(token)
+        Лемматизация слова (приведение к нормальной форме)
         
-        # Получаем нормальную форму слова
-        return self.morph.parse(token)[0].normal_form
+        Args:
+            token (str): Слово для лемматизации
+            
+        Returns:
+            str: Лемматизированное слово
+        """
+        if self.morph:
+            # Использование морфологического анализатора
+            return self.morph.parse(token)[0].normal_form
+        else:
+            # Если морфологический анализатор недоступен, используем стемминг
+            return self.stemmer.stem(token)
+
+    def extract_entities(self, text):
+        """
+        Извлечение предметных сущностей из текста
+        
+        Args:
+            text (str): Текст для анализа
+            
+        Returns:
+            dict: Словарь с найденными сущностями по категориям
+        """
+        text_lower = text.lower()
+        found_entities = {category: set() for category in self.domain_entities}
+        
+        # Поиск сущностей из каждой категории
+        for category, entities in self.domain_entities.items():
+            for entity in entities:
+                if entity in text_lower:
+                    found_entities[category].add(entity)
+        
+        # Поиск аббревиатур
+        for abbr, full_form in self.abbreviations.items():
+            if abbr.lower() in text_lower:
+                # Определяем категорию по полной форме
+                for category, entities in self.domain_entities.items():
+                    if any(term in full_form for term in entities):
+                        found_entities[category].add(abbr.lower())
+                        found_entities[category].add(full_form)
+        
+        return found_entities
 
     def extract_ngrams(self, tokens):
         """
-        Извлекает n-граммы из токенов
+        Извлечение n-грамм из токенов текста
+        
+        Args:
+            tokens (List[str]): Список токенов
+            
+        Returns:
+            List[str]: Список найденных n-грамм
         """
         ngrams_found = []
         
-        # Если список токенов слишком короткий, возвращаем пустой список
         if len(tokens) < 2:
             return ngrams_found
             
-        # Проверяем биграммы
+        # Проверка биграмм
         bigrams_list = [' '.join(bg) for bg in list(ngrams(tokens, 2))]
         for bg in bigrams_list:
-            if bg in self.ngram_vocabulary['bigrams']:
+            if bg in self.ngram_vocabulary.get('bigrams', set()):
                 ngrams_found.append(bg)
                 
-        # Проверяем триграммы
+        # Проверка триграмм
         if len(tokens) >= 3:
             trigrams_list = [' '.join(tg) for tg in list(ngrams(tokens, 3))]
             for tg in trigrams_list:
-                if tg in self.ngram_vocabulary['trigrams']:
+                if tg in self.ngram_vocabulary.get('trigrams', set()):
                     ngrams_found.append(tg)
                     
         return ngrams_found
 
+    def expand_query(self, text):
+        """
+        Расширение запроса с добавлением аббревиатур и полных форм
+        
+        Args:
+            text (str): Исходный запрос
+            
+        Returns:
+            List[str]: Список вариантов запроса
+        """
+        expanded_terms = []
+        
+        # Обработка аббревиатур и их полных форм
+        for abbr, full_form in self.abbreviations.items():
+            if abbr.lower() in text.lower():
+                expanded_terms.append(full_form)
+            elif full_form in text.lower():
+                expanded_terms.append(abbr.lower())
+        
+        # Поиск терминов из предметной области
+        for entity_list in self.domain_entities.values():
+            for entity in entity_list:
+                if entity in text.lower():
+                    # Добавляем синонимы и связанные термины
+                    for category, terms in self.domain_entities.items():
+                        for term in terms:
+                            if entity in term and entity != term:
+                                expanded_terms.append(term)
+        
+        return expanded_terms
+
     def preprocess_text(self, text):
         """
-        Улучшенный метод для предобработки текста: 
-        - токенизация
-        - удаление стоп-слов
-        - лемматизация/стемминг
-        - исправление опечаток
-        - сохранение n-грамм и сущностей
-        - обработка аббревиатур
+        Комплексная предобработка текста для поиска
+        
+        Args:
+            text (str): Исходный текст
+            
+        Returns:
+            str: Обработанный текст, готовый для векторизации
         """
-        if pd.isna(text):  # Проверка на NaN значения
+        if pd.isna(text):
             return ""
             
-        # Извлекаем сущности до предобработки
-        entities = self.extract_entities(str(text))
+        # Извлечение предметных сущностей
+        found_entities = self.extract_entities(str(text))
         
-        # Расширяем запрос аббревиатурами и полными формами
-        expanded_terms = self._expand_query_with_abbreviations(str(text))
+        # Расширение запроса дополнительными терминами
+        expanded_terms = self.expand_query(str(text))
         
-        # Приводим к нижнему регистру и удаляем лишние символы
+        # Нормализация текста
         text = str(text).lower()
-        text = re.sub(r'[^\w\s]', ' ', text)  # Удаляем знаки пунктуации
+        text = re.sub(r'[^\w\s]', ' ', text)
         
+        # Токенизация
         try:
-            # Токенизация
             tokens = word_tokenize(text)
-        except LookupError:
-            print("Критическая ошибка: не удалось загрузить токенизатор NLTK.")
+        except:
+            print("Ошибка токенизации")
             return ""
 
-        # Исправление опечаток, если словарь не пустой
+        # Исправление опечаток
         if self.vocabulary:
             tokens = [self.correct_spelling(token) for token in tokens if token.isalpha()]
         else:
             tokens = [token for token in tokens if token.isalpha()]
 
-        # Извлечение n-грамм до удаления стоп-слов
-        ngrams_found = self.extract_ngrams(tokens) if self.ngram_vocabulary else []
+        # Извлечение n-грамм
+        ngrams_found = self.extract_ngrams(tokens)
         
-        # Удаление стоп-слов и лемматизация/стемминг
+        # Удаление стоп-слов и лемматизация
         processed_tokens = []
         for token in tokens:
             if token not in self.stop_words:
                 processed_tokens.append(self.lemmatize(token))
                 
-        # Объединяем обработанные токены в строку
+        # Формирование результата
         result = ' '.join(processed_tokens)
         
-        # Добавляем найденные n-граммы и сущности
+        # Добавление n-грамм и предметных сущностей
         if ngrams_found:
             result += ' ' + ' '.join([ng.replace(' ', '_') for ng in ngrams_found])
-            
-        if entities:
-            result += ' ' + ' '.join([entity.replace(' ', '_') for entity in entities])
-            
-        # Добавляем расширенные термины (аббревиатуры и полные формы)
+        
+        # Добавление найденных сущностей
+        for category, entities in found_entities.items():
+            if entities:
+                for entity in entities:
+                    result += ' ' + entity.replace(' ', '_')
+        
+        # Добавление расширенных терминов
         if expanded_terms:
-            result += ' ' + ' '.join(expanded_terms)
+            result += ' ' + ' '.join([term.replace(' ', '_') for term in expanded_terms])
             
         return result
+        
+    def classify_query(self, text):
+        """
+        Классификация запроса пользователя
+        
+        Args:
+            text (str): Текст запроса
+            
+        Returns:
+            dict: Словарь с классификацией запроса
+        """
+        # Классификация по типу запроса
+        text_lower = text.lower()
+        
+        # Извлекаем сущности
+        entities = self.extract_entities(text)
+        
+        # Определяем тип запроса (проблема/инструкция/справка)
+        query_type = 'info'  # По умолчанию информационный запрос
+        if any(term in text_lower for term in ['ошибка', 'проблема', 'не работает', 'не удается']):
+            query_type = 'error'
+        elif any(term in text_lower for term in ['как', 'инструкция', 'подробно', 'объясните']):
+            query_type = 'instruction'
+            
+        # Определяем роль пользователя
+        user_role = None
+        for role in entities.get('роли', []):
+            user_role = role
+            break
+            
+        # Определяем компонент системы
+        component = None
+        for doc in entities.get('документы', []):
+            component = doc
+            break
+        
+        if not component:
+            for comp in entities.get('компоненты', []):
+                component = comp
+                break
+                
+        # Формируем результат классификации
+        classification = {
+            'query_type': query_type,
+            'user_role': user_role,
+            'component': component,
+            'actions': list(entities.get('действия', [])),
+            'problems': list(entities.get('проблемы', []))
+        }
+        
+        return classification

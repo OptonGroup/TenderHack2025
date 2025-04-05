@@ -1,294 +1,470 @@
-import numpy as np  # Для работы с числовыми массивами
-import pandas as pd  # Для работы с табличными данными
-from sklearn.feature_extraction.text import TfidfVectorizer  # Для векторизации текста с помощью TF-IDF
-from sklearn.metrics.pairwise import cosine_similarity  # Для расчета косинусного сходства между векторами
-import pickle  # Для сериализации и десериализации объектов Python
+"""
+Модуль для поиска релевантных статей в базе знаний Портала поставщиков
+"""
+
+import numpy as np
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.decomposition import TruncatedSVD
+import pickle
 import torch
 from sentence_transformers import SentenceTransformer
-from sklearn.ensemble import VotingClassifier
 import re
+import os
+import time
+from typing import List, Dict, Tuple, Optional, Any, Union
 
 # Импортируем TextProcessor из utils
-import utils  # Используем абсолютный импорт вместо относительного
+import utils
 
 class Model:
     """
-    Класс для создания и использования модели поиска похожих тендеров
-    с улучшенной векторизацией и предобработкой текста
+    Модель для семантического поиска релевантных статей в базе знаний
+    Портала поставщиков на основе запросов пользователей.
+    
+    Использует комбинацию TF-IDF и BERT для достижения наилучших результатов.
     """
-    def __init__(self, dataset_path, use_bert=True):
-        self.dataset = pd.read_parquet(dataset_path)  # Загрузка датасета из файла parquet
-        # Улучшенный TF-IDF векторизатор с поддержкой n-грамм
+    def __init__(self, dataset_path: str, use_bert: bool = True):
+        """
+        Инициализация модели поиска
+        
+        Args:
+            dataset_path (str): Путь к файлу с базой знаний (parquet)
+            use_bert (bool): Использовать ли BERT для семантического поиска
+        """
+        # Загрузка датасета
+        self.dataset = pd.read_parquet(dataset_path)
+        
+        # Обработчик текста
+        self.text_processor = utils.TextProcessor()
+        
+        # TF-IDF векторизатор с улучшенными параметрами
         self.vectorizer = TfidfVectorizer(
             ngram_range=(1, 3),  # Униграммы, биграммы и триграммы
             max_features=20000,
-            min_df=2
+            min_df=2,            # Игнорировать редкие термины
+            use_idf=True,
+            smooth_idf=True,
+            sublinear_tf=True    # Логарифмическое масштабирование частот
         )
-        self.text_processor = utils.TextProcessor()  # Создание экземпляра обработчика текста
-        self.model_tfidf = None
-        self.use_bert = use_bert
         
-        # Инициализируем трансформер, если используем BERT
+        # SVD для снижения размерности и латентно-семантического индексирования
+        self.svd = TruncatedSVD(n_components=100, random_state=42)
+        
+        # Параметры модели
+        self.use_bert = use_bert
+        self.bert_model = None
+        self.bert_embeddings = None
+        self.tfidf_matrix = None
+        self.lsa_matrix = None
+        
+        # Инициализация BERT модели для семантического поиска
         if self.use_bert:
             try:
                 self.bert_model = SentenceTransformer('DeepPavlov/rubert-base-cased-sentence')
-                self.bert_embeddings = None
             except Exception as e:
                 print(f"Не удалось загрузить BERT модель: {e}")
                 self.use_bert = False
+        
+        # Дополнительные атрибуты для классификации и анализа запросов
+        self.document_categories = {}  # Категории документов
+        self.document_roles = {}       # Роли пользователей для документов
+        self.document_topics = {}      # Темы документов
 
-    def train(self):   
+    def train(self):
         """
-        Метод для обучения модели
+        Обучение модели поиска на датасете
         """
+        print("Начало обучения модели...")
+        
         # Объединяем заголовок и описание для лучшего поиска
         self.dataset['combined_text'] = self.dataset['Заголовок статьи'] + ' ' + self.dataset['Описание'].fillna('')
         
-        # Добавляем метки для классификации типа запроса
-        self.dataset['is_error'] = self.dataset['combined_text'].apply(
-            lambda x: 1 if any(term in x.lower() for term in ['ошибка', 'проблема', 'не работает', 'не удается']) else 0
-        )
+        # Классификация документов по типам
+        print("Классификация документов...")
+        self._classify_documents()
         
-        # Создаем словарь для исправления опечаток и извлечения аббревиатур
+        # Построение словаря для исправления опечаток и извлечения аббревиатур
+        print("Создание словаря терминов...")
         self.text_processor.build_vocabulary(self.dataset['combined_text'])
         
-        # Выводим найденные аббревиатуры
-        if self.text_processor.abbreviations:
-            print(f"Найдено {len(self.text_processor.abbreviations)} аббревиатур:")
-            for abbr, full_form in list(self.text_processor.abbreviations.items())[:10]:
-                print(f"  {abbr} -> {full_form}")
-            if len(self.text_processor.abbreviations) > 10:
-                print(f"  ... и еще {len(self.text_processor.abbreviations) - 10}")
+        # Предобработка текстов
+        print("Предобработка текстов...")
+        self.dataset['processed_text'] = self.dataset['combined_text'].apply(
+            self.text_processor.preprocess_text
+        )
         
-        # Предобработка объединенного текста с улучшенными методами
-        self.dataset['processed_text'] = self.dataset['combined_text'].apply(self.text_processor.preprocess_text)
+        # Обучение TF-IDF векторизатора
+        print("Обучение TF-IDF векторизатора...")
+        self.tfidf_matrix = self.vectorizer.fit_transform(self.dataset['processed_text'])
         
-        # Обогащаем данные: добавляем аббревиатуры к документам с полными формами и наоборот
-        self._enrich_dataset_with_abbreviations()
+        # Применение LSA (Латентно-семантического анализа)
+        print("Применение LSA...")
+        try:
+            self.lsa_matrix = self.svd.fit_transform(self.tfidf_matrix)
+            print(f"Объяснённая дисперсия LSA: {sum(self.svd.explained_variance_ratio_):.2f}")
+        except Exception as e:
+            print(f"Ошибка при применении LSA: {e}")
+            self.lsa_matrix = None
         
-        # Обучаем TF-IDF векторизатор
-        self.model_tfidf = self.vectorizer.fit_transform(self.dataset['processed_text'])
-        
-        # Если используем BERT, вычисляем эмбеддинги для всех документов
+        # Если используем BERT, создаем семантические эмбеддинги
         if self.use_bert:
             try:
-                print("Создание BERT эмбеддингов для документов...")
+                print("Создание BERT эмбеддингов...")
                 self.bert_embeddings = self.bert_model.encode(
-                    self.dataset['combined_text'].tolist(), 
-                    show_progress_bar=True, 
+                    self.dataset['combined_text'].tolist(),
+                    show_progress_bar=True,
                     batch_size=16
                 )
                 print(f"BERT эмбеддинги созданы, размер: {self.bert_embeddings.shape}")
             except Exception as e:
                 print(f"Ошибка при создании BERT эмбеддингов: {e}")
                 self.use_bert = False
-
-    def _enrich_dataset_with_abbreviations(self):
-        """
-        Обогащает данные, добавляя аббревиатуры и полные формы к соответствующим документам
-        """
-        enriched_processed_text = []
         
-        for text, processed_text in zip(self.dataset['combined_text'], self.dataset['processed_text']):
-            enriched_text = processed_text
+        print("Обучение модели завершено")
+
+    def _classify_documents(self):
+        """
+        Классификация документов из базы знаний по типам,
+        ролям пользователей и темам
+        """
+        for idx, row in self.dataset.iterrows():
+            text = row['combined_text'].lower()
             
-            # Ищем аббревиатуры в тексте и добавляем их полные формы
-            for abbr, full_form in self.text_processor.abbreviations.items():
-                if abbr in text.upper():
-                    enriched_text += f" {full_form.replace(' ', '_')}"
+            # Классификация документа
+            classification = self.text_processor.classify_query(text)
             
-            # Ищем полные формы в тексте и добавляем их аббревиатуры
-            for full_form, abbr in self.text_processor.full_forms.items():
-                if full_form in text.lower():
-                    enriched_text += f" {abbr}"
-                    
-            enriched_processed_text.append(enriched_text)
+            # Сохранение классификации
+            self.document_categories[idx] = classification['query_type']
+            self.document_roles[idx] = classification['user_role']
+            self.document_topics[idx] = classification['component']
             
-        # Заменяем обработанный текст на обогащенный
-        self.dataset['processed_text'] = enriched_processed_text
+            # Добавление меток в датасет
+            self.dataset.at[idx, 'query_type'] = classification['query_type']
+            self.dataset.at[idx, 'user_role'] = classification['user_role']
+            self.dataset.at[idx, 'component'] = classification['component']
+            
+            # Определение, является ли документ об ошибке
+            self.dataset.at[idx, 'is_error'] = 1 if classification['query_type'] == 'error' else 0
 
-    def _extract_intent(self, text):
+    def predict(self, text: str) -> np.ndarray:
         """
-        Определяет намерение запроса (ошибка/инструкция/справка)
+        Вычисление релевантности между запросом и документами
+        
+        Args:
+            text (str): Текст запроса
+            
+        Returns:
+            np.ndarray: Массив значений релевантности для каждого документа
         """
-        error_terms = ['ошибка', 'проблема', 'не работает', 'не удается', 'не могу', 'не получается']
+        # Классификация запроса
+        classification = self.text_processor.classify_query(text)
+        query_type = classification['query_type']
+        user_role = classification['user_role']
+        component = classification['component']
         
-        # Проверяем наличие терминов, связанных с ошибками
-        is_error = any(term in text.lower() for term in error_terms)
+        # Предобработка запроса
+        processed_text = self.text_processor.preprocess_text(text)
         
-        return 'error' if is_error else 'general'
-
-    def _expand_query(self, query_text):
-        """
-        Расширяет запрос, добавляя варианты с аббревиатурами и полными формами
-        """
-        expanded_queries = [query_text]
+        # Расширение запроса вариантами (для улучшения поиска)
+        query_variants = self._generate_query_variants(text, classification)
         
-        # Проверяем на аббревиатуры в запросе
-        for abbr, full_form in self.text_processor.abbreviations.items():
-            if abbr in query_text.upper():
-                # Создаем вариант, где аббревиатура заменена полной формой
-                expanded_queries.append(query_text.upper().replace(abbr, full_form))
-        
-        # Проверяем на полные формы в запросе
-        for full_form, abbr in self.text_processor.full_forms.items():
-            if full_form in query_text.lower():
-                # Создаем вариант, где полная форма заменена аббревиатурой
-                expanded_queries.append(query_text.lower().replace(full_form, abbr))
-        
-        return expanded_queries
-
-    def predict(self, text):
-        """
-        Метод для расчета сходства между запросом и всеми документами в датасете
-        """
-        intent = self._extract_intent(text)
-        
-        # Расширяем запрос вариантами с аббревиатурами и полными формами
-        expanded_queries = self._expand_query(text)
-        
-        # Обрабатываем каждый вариант запроса
+        # Вычисление релевантности для всех вариантов запроса
         all_similarities = []
-        for query in expanded_queries:
-            processed_text = self.text_processor.preprocess_text(query)
+        
+        for query, weight in query_variants:
+            # Векторизация текста с помощью TF-IDF
+            query_vector = self.vectorizer.transform([query])
             
-            # TF-IDF векторизация запроса
-            text_vector_tfidf = self.vectorizer.transform([processed_text])
+            # TF-IDF сходство
+            tfidf_similarity = cosine_similarity(query_vector, self.tfidf_matrix)[0]
             
-            # Косинусное сходство для TF-IDF
-            similarity_tfidf = cosine_similarity(text_vector_tfidf, self.model_tfidf)[0]
+            # LSA сходство (если доступно)
+            lsa_similarity = np.zeros_like(tfidf_similarity)
+            if self.lsa_matrix is not None:
+                query_lsa = self.svd.transform(query_vector)
+                lsa_similarity = cosine_similarity(query_lsa, self.lsa_matrix)[0]
             
-            # Если используем BERT, вычисляем и комбинируем с TF-IDF
+            # BERT семантическое сходство (если доступно)
+            bert_similarity = np.zeros_like(tfidf_similarity)
             if self.use_bert and self.bert_embeddings is not None:
                 try:
                     # Получаем BERT эмбеддинг для запроса
-                    query_embedding = self.bert_model.encode([query])[0]
-                    
-                    # Косинусное сходство для BERT эмбеддингов
-                    similarity_bert = cosine_similarity(
-                        [query_embedding], 
+                    query_embedding = self.bert_model.encode(text)
+                    bert_similarity = cosine_similarity(
+                        [query_embedding],
                         self.bert_embeddings
                     )[0]
-                    
-                    # Комбинируем результаты: 0.6 * BERT + 0.4 * TF-IDF
-                    similarity = 0.6 * similarity_bert + 0.4 * similarity_tfidf
-                    
-                    # Повышаем вес документов, соответствующих намерению запроса
-                    if intent == 'error':
-                        # Если запрос об ошибке, повышаем вес документов с ошибками
-                        similarity = similarity + 0.2 * self.dataset['is_error'].values
                 except Exception as e:
-                    print(f"Ошибка при использовании BERT: {e}, используем только TF-IDF")
-                    similarity = similarity_tfidf
-            else:
-                similarity = similarity_tfidf
-                
-                # Применяем весовые коэффициенты на основе намерения запроса
-                if intent == 'error':
-                    similarity = similarity + 0.2 * self.dataset['is_error'].values
+                    print(f"Ошибка при вычислении BERT сходства: {e}")
             
+            # Комбинированное сходство с весами
+            combined_similarity = 0.3 * tfidf_similarity + 0.2 * lsa_similarity
+            if self.use_bert:
+                combined_similarity += 0.5 * bert_similarity
+            
+            # Применение контекстных весов на основе классификации
+            similarity = self._apply_context_weights(
+                combined_similarity, 
+                query_type, 
+                user_role, 
+                component
+            )
+            
+            # Применение веса варианта запроса
+            similarity = similarity * weight
             all_similarities.append(similarity)
-            
-        # Берем максимальную вероятность для каждого документа из всех вариантов запроса
+        
+        # Выбираем максимальное значение релевантности для каждого документа
         max_similarity = np.max(all_similarities, axis=0)
-            
+        
         return max_similarity
-    
-    def get_recommendations(self, text, top_n=5):
+
+    def _generate_query_variants(self, text: str, classification: Dict[str, Any]) -> List[Tuple[str, float]]:
         """
-        Метод для получения top_n наиболее похожих документов
+        Генерация вариантов запроса для улучшения поиска
+        
+        Args:
+            text (str): Исходный текст запроса
+            classification (Dict[str, Any]): Результат классификации запроса
+            
+        Returns:
+            List[Tuple[str, float]]: Список пар (вариант запроса, вес)
         """
+        query_type = classification['query_type']
+        user_role = classification['user_role']
+        component = classification['component']
+        
+        # Базовый предобработанный запрос
+        base_query = self.text_processor.preprocess_text(text)
+        variants = [(base_query, 1.0)]
+        
+        # Разделение запроса на части (по знакам препинания)
+        parts = re.split(r'[,.;:!?]', text)
+        parts = [part.strip() for part in parts if part.strip()]
+        
+        # Если запрос можно разделить, добавляем основную часть
+        if len(parts) > 1:
+            main_part = parts[0]
+            main_query = self.text_processor.preprocess_text(main_part)
+            variants.append((main_query, 0.8))
+        
+        # Если определена роль пользователя, добавляем запрос с явным указанием роли
+        if user_role:
+            role_query = self.text_processor.preprocess_text(f"{text} {user_role}")
+            variants.append((role_query, 1.2))
+        
+        # Если определен компонент, добавляем запрос с явным указанием компонента
+        if component:
+            component_query = self.text_processor.preprocess_text(f"{text} {component}")
+            variants.append((component_query, 1.1))
+        
+        # Для запросов об ошибках добавляем усиленный вариант
+        if query_type == 'error':
+            error_terms = ['ошибка', 'проблема', 'не работает']
+            if not any(term in text.lower() for term in error_terms):
+                error_query = self.text_processor.preprocess_text(f"ошибка {text}")
+                variants.append((error_query, 0.9))
+        
+        # Если в запросе есть указание на действие, добавляем вариант с усилением действия
+        for action in classification['actions']:
+            action_query = self.text_processor.preprocess_text(f"{action} {component or ''}")
+            variants.append((action_query, 0.9))
+        
+        return variants
+
+    def _apply_context_weights(
+        self, 
+        similarity: np.ndarray, 
+        query_type: str, 
+        user_role: Optional[str], 
+        component: Optional[str]
+    ) -> np.ndarray:
+        """
+        Применение весовых коэффициентов на основе контекста запроса
+        
+        Args:
+            similarity (np.ndarray): Исходная релевантность
+            query_type (str): Тип запроса (error/instruction/info)
+            user_role (Optional[str]): Роль пользователя
+            component (Optional[str]): Компонент системы
+            
+        Returns:
+            np.ndarray: Модифицированная релевантность с учетом контекста
+        """
+        weighted_similarity = similarity.copy()
+        
+        # Применение весов по типу запроса
+        for i in range(len(self.dataset)):
+            doc_type = self.document_categories.get(i)
+            if doc_type == query_type:
+                weighted_similarity[i] += 0.2
+        
+        # Применение весов по роли пользователя
+        if user_role:
+            for i in range(len(self.dataset)):
+                doc_role = self.document_roles.get(i)
+                if doc_role == user_role:
+                    weighted_similarity[i] += 0.3
+        
+        # Применение весов по компоненту системы
+        if component:
+            for i in range(len(self.dataset)):
+                doc_topic = self.document_topics.get(i)
+                if doc_topic == component:
+                    weighted_similarity[i] += 0.25
+        
+        return weighted_similarity
+
+    def get_recommendations(self, text: str, top_n: int = 5) -> pd.DataFrame:
+        """
+        Получение top_n наиболее релевантных документов
+        
+        Args:
+            text (str): Текст запроса
+            top_n (int): Количество документов для вывода
+            
+        Returns:
+            pd.DataFrame: Датафрейм с найденными документами и их релевантностью
+        """
+        # Вычисление релевантности
         similarity = self.predict(text)
+        
+        # Получение индексов наиболее релевантных документов
         indices = np.argsort(similarity)[::-1][:top_n]
         
+        # Формирование результата
         result = self.dataset.iloc[indices][['Заголовок статьи', 'Описание']].copy()
-        result['вероятность'] = similarity[indices]
+        result['релевантность'] = similarity[indices]
+        
+        # Добавление контекстной информации
+        result['тип'] = [self.document_categories.get(i, '') for i in indices]
+        result['роль'] = [self.document_roles.get(i, '') for i in indices]
+        result['компонент'] = [self.document_topics.get(i, '') for i in indices]
         
         return result
-    
-    def save_model(self, model_path):
+
+    def save_model(self, model_path: str) -> None:
         """
-        Метод для сохранения модели в файл
+        Сохранение модели в файл
+        
+        Args:
+            model_path (str): Путь для сохранения модели
         """
-        # Если используем BERT, временно отключаем модель перед сохранением
+        # Временно отключаем BERT модель для сериализации
         bert_model_tmp = None
         if self.use_bert:
             bert_model_tmp = self.bert_model
             self.bert_model = None
         
+        # Сохранение модели
         with open(model_path, 'wb') as f:
             pickle.dump(self, f)
         
-        # Восстанавливаем модель BERT
+        # Восстановление BERT модели
         if bert_model_tmp is not None:
             self.bert_model = bert_model_tmp
-            
+        
+        print(f"Модель сохранена в {model_path}")
+
     @staticmethod
-    def load_model(model_path):
+    def load_model(model_path: str) -> 'Model':
         """
-        Статический метод для загрузки модели из файла
+        Загрузка модели из файла
+        
+        Args:
+            model_path (str): Путь к файлу с моделью
+            
+        Returns:
+            Model: Загруженная модель
         """
+        # Загрузка модели
         with open(model_path, 'rb') as f:
             model = pickle.load(f)
-            
-        # Если используем BERT, загружаем модель после десериализации
+        
+        # Если нужно, восстанавливаем BERT модель
         if model.use_bert:
             try:
                 model.bert_model = SentenceTransformer('DeepPavlov/rubert-base-cased-sentence')
             except Exception as e:
                 print(f"Не удалось загрузить BERT модель: {e}")
                 model.use_bert = False
-                
-        return model
         
+        return model
+
 
 if __name__ == "__main__":
-    import time
-    import os
     import argparse
     
-    retrain = False
+    # Создание парсера аргументов командной строки
+    parser = argparse.ArgumentParser(description='Запуск модели поиска в базе знаний')
+    parser.add_argument('--retrain', action='store_true', help='Переобучить модель')
+    parser.add_argument('--query', type=str, default="Разблокировать участника компании", 
+                        help='Поисковый запрос')
+    parser.add_argument('--model_path', type=str, default="model.pkl", 
+                        help='Путь к файлу модели')
+    parser.add_argument('--dataset_path', type=str, default="docs/dataset.parquet", 
+                        help='Путь к набору данных')
+    parser.add_argument('--top_n', type=int, default=10, 
+                        help='Количество результатов для вывода')
     
-    model_path = 'model.pkl'
+    # Разбор аргументов
+    args = parser.parse_args()
     
     try:
         start_time = time.time()
         
-        # Проверяем, нужно ли заново обучить модель или загрузить существующую
-        if retrain or not os.path.exists(model_path):
-            print("Создание и обучение новой модели...")
-            # Создание модели с указанием пути к датасету
-            model = Model('docs/dataset.parquet', use_bert=True)
-            print(f"Время загрузки данных: {time.time() - start_time:.2f} секунд")
-
-            start_time = time.time()
-            # Обучение модели
-            model.train()
-            print(f"Время обучения модели: {time.time() - start_time:.2f} секунд")
+        # Проверка необходимости переобучения модели
+        if args.retrain or not os.path.exists(args.model_path):
+            print(f"Создание и обучение новой модели...")
+            # Создание модели
+            model = Model(args.dataset_path, use_bert=True)
+            print(f"Время загрузки данных: {time.time() - start_time:.2f} с")
             
-            # Сохраняем обученную модель
-            model.save_model(model_path)
-            print(f"Модель сохранена в файл: {model_path}")
+            # Обучение модели
+            start_time = time.time()
+            model.train()
+            print(f"Время обучения модели: {time.time() - start_time:.2f} с")
+            
+            # Сохранение модели
+            model.save_model(args.model_path)
         else:
-            print(f"Загрузка существующей модели из файла: {model_path}")
-            model = Model.load_model(model_path)
-            print(f"Время загрузки модели: {time.time() - start_time:.2f} секунд")
-
+            print(f"Загрузка существующей модели из {args.model_path}")
+            model = Model.load_model(args.model_path)
+            print(f"Время загрузки модели: {time.time() - start_time:.2f} с")
+        
+        # Выполнение поиска
         start_time = time.time()
-
-        # Получение рекомендаций для основного запроса
-        print("\nОсновной результат поиска:")
-        recommendations = model.get_recommendations(
-            "Разблокировать участника компании",
-            top_n=10
-        )
-        print("Найденные статьи:")
-        # Вывод найденных статей
-        for i, (title, desc, prob) in enumerate(zip(recommendations['Заголовок статьи'], recommendations['Описание'], recommendations['вероятность'])):
-            print(f"{i+1}. {title} (вероятность: {prob:.4f})")
+        print(f"\nЗапрос: '{args.query}'")
+        
+        # Анализ запроса
+        query_analysis = model.text_processor.classify_query(args.query)
+        print(f"Анализ запроса:")
+        print(f"  Тип запроса: {query_analysis['query_type']}")
+        print(f"  Роль пользователя: {query_analysis['user_role']}")
+        print(f"  Компонент: {query_analysis['component']}")
+        
+        # Получение результатов
+        recommendations = model.get_recommendations(args.query, top_n=args.top_n)
+        
+        # Вывод результатов
+        print("\nНайденные статьи:")
+        for i, (title, desc, rel, q_type, role, comp) in enumerate(zip(
+            recommendations['Заголовок статьи'], 
+            recommendations['Описание'], 
+            recommendations['релевантность'],
+            recommendations['тип'],
+            recommendations['роль'],
+            recommendations['компонент']
+        )):
+            print(f"{i+1}. {title} (релевантность: {rel:.4f})")
+            print(f"   Тип: {q_type}, Роль: {role}, Компонент: {comp}")
             if not pd.isna(desc):
                 print(f"   {desc[:100]}..." if len(str(desc)) > 100 else f"   {desc}")
             print()
-        print(f"Время получения рекомендаций: {time.time() - start_time:.2f} секунд")
+        
+        print(f"Время выполнения поиска: {time.time() - start_time:.2f} с")
+    
     except Exception as e:
-        print(f"Произошла ошибка: {e}")  # Обработка возможных исключений
+        print(f"Произошла ошибка: {e}")
