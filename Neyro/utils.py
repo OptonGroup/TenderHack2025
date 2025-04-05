@@ -6,7 +6,8 @@
 import pandas as pd  # Для работы с табличными данными
 import nltk  # Библиотека для обработки естественного языка
 import re  # Библиотека для работы с регулярными выражениями
-from difflib import get_close_matches  # Для поиска похожих слов
+from symspellpy import SymSpell, Verbosity  # Основные классы SymSpell
+import os  # Для работы с файловой системой
 from nltk.tokenize import word_tokenize, sent_tokenize  # Функции для разбиения текста на слова и предложения
 from nltk.corpus import stopwords  # Коллекция стоп-слов
 from nltk.stem import SnowballStemmer  # Стеммер для приведения слов к основе
@@ -74,6 +75,15 @@ class TextProcessor:
         self.all_entities = set()  # Создаем пустое множество для всех сущностей
         for entity_set in self.domain_entities.values():  # Перебираем все категории сущностей
             self.all_entities.update(entity_set)  # Добавляем сущности в общее множество
+            
+        # Инициализация SymSpell для коррекции орфографии
+        self.sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=5)
+        
+        # Путь к словарю для SymSpell
+        self.dictionary_path = "dictionary_ru.txt"
+                
+        self.dictionary_created = False
+       
 
     def build_vocabulary(self, texts):
         """
@@ -85,6 +95,7 @@ class TextProcessor:
         all_words = []  # Создаем пустой список для всех слов
         bigrams_list = []  # Создаем пустой список для биграмм
         trigrams_list = []  # Создаем пустой список для триграмм
+        word_frequency = Counter()  # Счетчик частоты слов для SymSpell
         
         for text in texts:  # Перебираем все тексты
             if pd.isna(text):  # Проверяем, не является ли текст пустым (NaN)
@@ -102,6 +113,11 @@ class TextProcessor:
             # Токенизация текста
             words = word_tokenize(clean_text)  # Разбиваем текст на отдельные слова
             all_words.extend(words)  # Добавляем слова в общий список
+            
+            # Подсчет частоты для SymSpell
+            for word in words:
+                if word.isalpha() and len(word) > 1:  # Только буквенные слова длиной более 1 символа
+                    word_frequency[word] += 1
             
             # Создаем n-граммы для улучшения качества поиска
             if len(words) > 1:  # Если в тексте больше одного слова
@@ -129,6 +145,33 @@ class TextProcessor:
                 self.ngram_vocabulary['bigrams'].add(entity)  # Добавляем в словарь биграмм
             elif len(words) == 3:  # Если сущность состоит из 3 слов
                 self.ngram_vocabulary['trigrams'].add(entity)  # Добавляем в словарь триграмм
+        
+        # Создаем и сохраняем словарь частотности для SymSpell
+        if word_frequency:
+            try:
+                # Сохраняем словарь частотности в файл
+                with open(self.dictionary_path, "w", encoding="utf-8") as f:
+                    for word, freq in word_frequency.items():
+                        f.write(f"{word} {freq}\n")
+                
+                # Загружаем словарь в SymSpell
+                if not self.sym_spell.load_dictionary(self.dictionary_path, encoding='utf-8', term_index=0, count_index=1):
+                    print(f"Ошибка загрузки словаря из {self.dictionary_path}")
+                else:
+                    print(f"Словарь частотности создан и загружен ({len(word_frequency)} слов)")
+                
+                # Добавляем предметные сущности в словарь SymSpell
+                entity_count = 0
+                for entity_set in self.domain_entities.values():
+                    for entity in entity_set:
+                        words = entity.split()
+                        for word in words:
+                            self.sym_spell.create_dictionary_entry(word, 1000)  # Высокая частота для предметных терминов
+                            entity_count += 1
+                
+                self.dictionary_created = True
+            except Exception as e:
+                print(f"Ошибка при создании словаря: {e}")
 
     def _extract_abbreviations(self, text):
         """
@@ -172,23 +215,41 @@ class TextProcessor:
                             self.abbreviations[potential_abbr] = full_form  # Сохраняем в словарь аббревиатур
                             self.full_forms[full_form] = potential_abbr  # Сохраняем в словарь полных форм
 
-    def correct_spelling(self, word, cutoff=0.8):
+    def correct_spelling(self, word, max_edit_distance=2):
         """
-        Исправление опечаток с использованием словаря
+        Исправление опечаток с использованием SymSpell
         
         Args:
             word (str): Слово для проверки
-            cutoff (float): Порог сходства (от 0 до 1)
+            max_edit_distance (int): Максимальное расстояние редактирования
             
         Returns:
             str: Исправленное слово или исходное, если подходящего варианта не найдено
         """
-        if not self.vocabulary or word in self.vocabulary:  # Если словарь пуст или слово уже есть в словаре
-            return word  # Возвращаем исходное слово
-
-        # Поиск ближайших по написанию слов
-        matches = get_close_matches(word, self.vocabulary, n=1, cutoff=cutoff)  # Ищем похожие слова
-        return matches[0] if matches else word  # Возвращаем первое похожее слово или исходное, если ничего не найдено
+        # Если слово уже есть в словаре или словарь SymSpell не инициализирован
+        if word in self.vocabulary or not hasattr(self, 'sym_spell') or not self.sym_spell or len(word) <= 2:
+            return word
+            
+        # Используем SymSpell для поиска ближайшего правильного варианта
+        try:
+            # Поиск наиболее вероятного исправления
+            suggestions = self.sym_spell.lookup(word, Verbosity.CLOSEST, max_edit_distance=max_edit_distance)
+            
+            # Если есть предложения и первое достаточно хорошее
+            if suggestions and len(suggestions) > 0:
+                suggestion = suggestions[0]
+                corrected_word = suggestion.term
+                                
+                # Используем первое (наиболее вероятное) предложение
+                return corrected_word
+            else:
+                # Если подходящих вариантов не найдено, возвращаем исходное слово
+                return word
+                
+        except Exception as e:
+            print(f"Ошибка при исправлении слова '{word}': {e}")
+            # В случае ошибки возвращаем исходное слово
+            return word
 
     def lemmatize(self, token):
         """
@@ -298,6 +359,47 @@ class TextProcessor:
         
         return expanded_terms  # Возвращаем расширенные термины
 
+    def check_query_spelling(self, query):
+        """
+        Проверка орфографии во всем запросе и предложение исправлений
+        
+        Args:
+            query (str): Текст запроса пользователя
+            
+        Returns:
+            tuple: (исправленный запрос, список исправлений)
+        """
+        if pd.isna(query):
+            return "", []
+            
+        # Нормализация текста
+        text = str(query).lower()
+        text = re.sub(r'[^\w\s]', ' ', text)
+        
+        # Токенизация
+        try:
+            tokens = word_tokenize(text)
+        except:
+            return query, []
+            
+        corrections = []  # Список исправлений
+        corrected_tokens = []  # Исправленные токены
+        
+        for token in tokens:
+            if token.isalpha() and len(token) > 2:  # Обрабатываем только буквенные токены длиннее 2 букв
+                # Исправляем опечатки с помощью SymSpell
+                corrected_token = self.correct_spelling(token, max_edit_distance=2)
+                if corrected_token != token:
+                    corrections.append((token, corrected_token))
+                corrected_tokens.append(corrected_token)
+            else:
+                corrected_tokens.append(token)
+                
+        # Собираем исправленный запрос
+        corrected_query = ' '.join(corrected_tokens)
+        
+        return corrected_query, corrections
+
     def preprocess_text(self, text):
         """
         Комплексная предобработка текста для поиска
@@ -310,6 +412,13 @@ class TextProcessor:
         """
         if pd.isna(text):  # Если текст пустой (NaN)
             return ""  # Возвращаем пустую строку
+        
+        # Сначала исправляем запрос полностью - это поможет исправить ошибки до дальнейшей обработки
+        corrected_text, _ = self.check_query_spelling(text)
+        
+        # Если текст был исправлен, используем его для дальнейшей обработки
+        if corrected_text != text:
+            text = corrected_text
             
         # Извлечение предметных сущностей
         found_entities = self.extract_entities(str(text))  # Извлекаем сущности из текста
@@ -325,14 +434,21 @@ class TextProcessor:
         try:
             tokens = word_tokenize(text)  # Разбиваем текст на слова
         except:
-            print("Ошибка токенизации")  # Выводим сообщение об ошибке
             return ""  # Возвращаем пустую строку
 
-        # Исправление опечаток
-        if self.vocabulary:  # Если словарь не пуст
-            tokens = [self.correct_spelling(token) for token in tokens if token.isalpha()]  # Исправляем опечатки в словах
-        else:
-            tokens = [token for token in tokens if token.isalpha()]  # Оставляем только слова
+        # Исправление опечаток с помощью SymSpell
+        corrected_tokens = []
+        for token in tokens:
+            if token.isalpha():  # Обрабатываем только буквенные токены
+                # Исправляем опечатки с помощью SymSpell
+                corrected_token = self.correct_spelling(token)
+                corrected_tokens.append(corrected_token)
+            else:
+                # Если не буквенный (числа, символы и т.д.), оставляем как есть
+                corrected_tokens.append(token)
+        
+        # Заменяем исходные токены на исправленные
+        tokens = corrected_tokens
 
         # Извлечение n-грамм
         ngrams_found = self.extract_ngrams(tokens)  # Извлекаем n-граммы
