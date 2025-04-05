@@ -599,13 +599,13 @@ class Model:
         query_classification = self.text_processor.classify_query(text)
         
         # Проверяем, нужно ли перенаправить пользователя к оператору
-        if query_classification.get('needs_operator', False):
-            return {
-                "answer": "Для решения вашей проблемы требуется помощь оператора. Мы переводим вас на специалиста технической поддержки.",
-                "fragments": [],
-                "sources": [],
-                "needs_operator": True
-            }
+        # if query_classification.get('needs_operator', False):
+        #     return {
+        #         "answer": "Для решения вашей проблемы требуется помощь оператора. Мы переводим вас на специалиста технической поддержки.",
+        #         "fragments": [],
+        #         "sources": [],
+        #         "needs_operator": True
+        #     }
         
         # Извлекаем релевантные фрагменты
         fragments = self.extract_relevant_fragments(text, top_n=top_n, top_k_fragments=top_k_fragments)

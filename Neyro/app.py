@@ -146,4 +146,4 @@ async def get_answer(query: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=7777, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=7777)
