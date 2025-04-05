@@ -24,6 +24,7 @@ from transformers import pipeline  # Для работы с предобучен
 # Импорт инструментов для обработки текста
 import re  # Для работы с регулярными выражениями
 from nltk.tokenize import sent_tokenize, word_tokenize  # Для разбиения текста на предложения и слова
+from rank_bm25 import BM25Okapi # Для ранжирования с использованием BM25
 
 # Импорт типов для аннотаций
 from typing import List, Dict, Tuple, Optional, Any, Union  # Для типизации кода
@@ -53,18 +54,8 @@ class Model:
         # Обработчик текста
         self.text_processor = utils.TextProcessor()
         
-        # TF-IDF векторизатор с улучшенными параметрами
-        self.vectorizer = TfidfVectorizer(
-            ngram_range=(1, 3),  # Униграммы, биграммы и триграммы
-            max_features=20000,
-            min_df=2,            # Игнорировать редкие термины
-            use_idf=True,
-            smooth_idf=True,
-            sublinear_tf=True    # Логарифмическое масштабирование частот
-        )
-        
-        # SVD для снижения размерности и латентно-семантического индексирования
-        self.svd = TruncatedSVD(n_components=100, random_state=42)
+        # Инициализация BM25
+        self.bm25 = None
         
         # Параметры модели
         self.use_bert = use_bert
@@ -119,20 +110,22 @@ class Model:
         self.dataset['processed_text'] = self.dataset['combined_text'].apply(
             self.text_processor.preprocess_text
         )
-        
-        # Обучение TF-IDF векторизатора
-        print("Обучение TF-IDF векторизатора...")
-        self.tfidf_matrix = self.vectorizer.fit_transform(self.dataset['processed_text'])
-        
-        # Применение LSA (Латентно-семантического анализа)
-        print("Применение LSA...")
-        try:
-            self.lsa_matrix = self.svd.fit_transform(self.tfidf_matrix)
-            print(f"Объяснённая дисперсия LSA: {sum(self.svd.explained_variance_ratio_):.2f}")
-        except Exception as e:
-            print(f"Ошибка при применении LSA: {e}")
-            self.lsa_matrix = None
-        
+
+        # Токенизация текстов для BM25
+        print("Токенизация текстов для BM25...")
+        # Убираем пустые строки, которые могут возникнуть после preprocess_text
+        tokenized_corpus = [doc.split(" ") for doc in self.dataset['processed_text'] if doc]
+
+        # Обучение BM25
+        print("Обучение BM25...")
+        # Проверка, что корпус не пуст
+        if tokenized_corpus:
+            self.bm25 = BM25Okapi(tokenized_corpus)
+            print("Модель BM25 обучена.")
+        else:
+            print("Ошибка: Корпус для обучения BM25 пуст.")
+            # Можно добавить обработку ошибки или возврат
+
         # Если используем BERT, создаем семантические эмбеддинги
         if self.use_bert:
             try:
@@ -189,33 +182,34 @@ class Model:
         user_role = classification['user_role']
         component = classification['component']
         
-        # Предобработка запроса
-        processed_text = self.text_processor.preprocess_text(text)
-        
         # Расширение запроса вариантами (для улучшения поиска)
         query_variants = self._generate_query_variants(text, classification)
         
         # Вычисление релевантности для всех вариантов запроса
-        all_similarities = []
+        all_scores = []
+        num_docs = len(self.dataset) # Количество документов
         
         for query, weight in query_variants:
-            # Векторизация текста с помощью TF-IDF
-            query_vector = self.vectorizer.transform([query])
+            # Токенизация предобработанного запроса
+            tokenized_query = query.split(" ")
             
-            # TF-IDF сходство
-            tfidf_similarity = cosine_similarity(query_vector, self.tfidf_matrix)[0]
-            
-            # LSA сходство (если доступно)
-            lsa_similarity = np.zeros_like(tfidf_similarity)
-            if self.lsa_matrix is not None:
-                query_lsa = self.svd.transform(query_vector)
-                lsa_similarity = cosine_similarity(query_lsa, self.lsa_matrix)[0]
+            # Расчет BM25 оценок
+            bm25_scores = np.zeros(num_docs)
+            if self.bm25:
+                try:
+                    bm25_scores = self.bm25.get_scores(tokenized_query)
+                except Exception as e:
+                    print(f"Ошибка при расчете BM25 для запроса '{query[:50]}...': {e}")
+                    bm25_scores = np.zeros(num_docs)
+            else:
+                print("Предупреждение: Модель BM25 недоступна.")
+                bm25_scores = np.zeros(num_docs)
             
             # BERT семантическое сходство (если доступно)
-            bert_similarity = np.zeros_like(tfidf_similarity)
+            bert_similarity = np.zeros(num_docs)
             if self.use_bert and self.bert_embeddings is not None:
                 try:
-                    # Получаем BERT эмбеддинг для запроса
+                    # Используем исходный текст для BERT для лучшего семантического понимания
                     query_embedding = self.bert_model.encode(text)
                     bert_similarity = cosine_similarity(
                         [query_embedding],
@@ -224,29 +218,39 @@ class Model:
                 except Exception as e:
                     print(f"Ошибка при вычислении BERT сходства: {e}")
             
-            # Комбинированное сходство с весами (увеличиваем вес TF-IDF и LSA)
-            combined_similarity = 0.5 * tfidf_similarity + 0.2 * lsa_similarity
+            # Комбинированное сходство с весами
+            # Вес для BERT можно настроить. BM25 обычно дает хороший базовый ранг.
+            bert_weight = 0.2
             if self.use_bert:
-                combined_similarity += 0.3 * bert_similarity
-            
+                # Нормализуем BM25 оценки перед комбинированием (простой способ)
+                # Это предотвращает слишком большие значения BM25 от подавления BERT
+                max_bm25 = np.max(bm25_scores) if np.any(bm25_scores) else 1.0
+                norm_bm25_scores = bm25_scores / max_bm25 if max_bm25 > 0 else bm25_scores
+                combined_scores = (1 - bert_weight) * norm_bm25_scores + bert_weight * bert_similarity
+            else:
+                combined_scores = bm25_scores # Используем только BM25 если BERT отключен
             
             # Применение контекстных весов на основе классификации
-            similarity = self._apply_context_weights(
-                combined_similarity, 
-                query_type, 
-                user_role, 
+            scores_with_context = self._apply_context_weights(
+                combined_scores,
+                query_type,
+                user_role,
                 component,
                 text
             )
             
             # Применение веса варианта запроса
-            similarity = similarity * weight
-            all_similarities.append(similarity)
+            final_scores = scores_with_context * weight
+            all_scores.append(final_scores)
         
         # Выбираем максимальное значение релевантности для каждого документа
-        max_similarity = np.max(all_similarities, axis=0)
+        if all_scores:
+            max_scores = np.max(all_scores, axis=0)
+        else:
+            # Возвращаем нули если не было вариантов запроса или произошла ошибка
+            max_scores = np.zeros(num_docs)
         
-        return max_similarity
+        return max_scores
 
     def _generate_query_variants(self, text: str, classification: Dict[str, Any]) -> List[Tuple[str, float]]:
         """
@@ -522,38 +526,30 @@ class Model:
                 
                 # Бонус за совпадение сущностей
                 entity_bonus = min(0.3, 0.1 * entity_matches)
-                
-                if self.use_bert:
+
+                segment_relevance = 0.0 # Инициализируем релевантность сегмента
+                if self.use_bert and query_embedding is not None:
                     # BERT-эмбединг для сегмента
                     try:
                         segment_embedding = self.bert_model.encode(segment)
                         bert_similarity = cosine_similarity([query_embedding], [segment_embedding])[0][0]
-                        
-                        # Добавляем лексический поиск с TF-IDF
-                        processed_segment = self.text_processor.preprocess_text(segment)
-                        segment_vector = self.vectorizer.transform([processed_segment])
-                        tfidf_similarity = cosine_similarity(segment_vector, self.vectorizer.transform([self.text_processor.preprocess_text(text)]))[0][0]
-                        
-                        # Комбинируем с большим весом для TF-IDF
-                        segment_relevance = 0.4 * tfidf_similarity + 0.4 * bert_similarity + 0.2 * entity_bonus
-                    except:
-                        # Если возникла ошибка, используем только TF-IDF и бонус за сущности
-                        processed_segment = self.text_processor.preprocess_text(segment)
-                        segment_vector = self.vectorizer.transform([processed_segment])
-                        tfidf_similarity = cosine_similarity(segment_vector, self.vectorizer.transform([self.text_processor.preprocess_text(text)]))[0][0]
-                        segment_relevance = 0.8 * tfidf_similarity + 0.2 * entity_bonus
+
+                        # Релевантность сегмента на основе BERT и бонуса за сущности
+                        segment_relevance = 0.8 * bert_similarity + 0.2 * entity_bonus
+                    except Exception as e:
+                        print(f"Ошибка при обработке сегмента BERT: {e}")
+                        # Если BERT не сработал, используем только бонус за сущности
+                        segment_relevance = entity_bonus
                 else:
-                    # TF-IDF для сегмента и бонус за сущности
-                    processed_segment = self.text_processor.preprocess_text(segment)
-                    segment_vector = self.vectorizer.transform([processed_segment])
-                    tfidf_similarity = cosine_similarity(segment_vector, self.vectorizer.transform([self.text_processor.preprocess_text(text)]))[0][0]
-                    segment_relevance = 0.8 * tfidf_similarity + 0.2 * entity_bonus
-                
+                    # Если BERT не используется, релевантность = бонус за сущности
+                    segment_relevance = entity_bonus
+
                 # Применяем штраф за длину текста
                 segment_relevance = segment_relevance * length_penalty
-                
+
                 # Учитываем релевантность статьи при оценке сегмента
-                combined_relevance = 0.7 * segment_relevance + 0.3 * article_relevance
+                # article_relevance теперь основана на BM25 (+BERT), полученном из get_recommendations
+                combined_relevance = 0.6 * segment_relevance + 0.4 * article_relevance
                 
                 # Проверяем присутствие ключевых слов запроса в сегменте
                 segment_lower = segment.lower()
@@ -802,7 +798,7 @@ class Model:
 
 if __name__ == "__main__":
     retrain = False
-    query = """ "ОрТИКуЛь" """
+    query = """ Какие действия нужно выполнить для обновления прайслиста в электронном магазине? """
     model_path = "model.pkl"
     dataset_path = "docs/dataset.parquet"
     top_n = 10
@@ -839,29 +835,6 @@ if __name__ == "__main__":
         print(f"  Тип запроса: {query_analysis['query_type']}")
         print(f"  Роль пользователя: {query_analysis['user_role']}")
         print(f"  Компонент: {query_analysis['component']}")
-        
-        # Демонстрация работы NER с spaCy
-        print("\nДемонстрация работы NER с помощью spaCy:")
-        test_queries = [
-            "ООО Ромашка не может подписать контракт с Департаментом образования города Москвы",
-            "Иванов Иван Иванович не смог зарегистрироваться на портале",
-            "Как заказчику из Санкт-Петербурга оформить доставку товара?"
-        ]
-        
-        for test_query in test_queries:
-            print(f"\nЗапрос: '{test_query}'")
-            entities = model.text_processor.extract_entities_spacy(test_query)
-            
-            if entities:
-                print("Найденные сущности:")
-                for entity_text, entity_type in entities:
-                    print(f"  - {entity_text} ({entity_type})")
-            else:
-                print("Сущности не найдены или spaCy не загружен")
-                
-            # Также показываем обработанный текст
-            processed_text = model.text_processor.preprocess_text(test_query)
-            print(f"Обработанный текст: {processed_text[:100]}..." if len(processed_text) > 100 else f"Обработанный текст: {processed_text}")
         
         # Получение релевантных фрагментов
         print("\nИзвлечение релевантных фрагментов...")
