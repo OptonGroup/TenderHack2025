@@ -126,18 +126,16 @@ class HybridAssistant:
         
         return answer_data
 
+import fastapi
 
-def main():
-    """
-    Демонстрационная функция для запуска ассистента в консольном режиме
-    """
-    assistant = HybridAssistant()
-    
-    query = input("\nВведите ваш вопрос: ")
-    
-    import json
-    print(json.dumps(assistant.get_answer(query), indent=4, ensure_ascii=False))  
+app = fastapi.FastAPI()
+assistant = HybridAssistant()
 
+@app.get("/query")
+async def get_answer(query: str):
+    return assistant.get_answer(query)
 
 if __name__ == "__main__":
-    main() 
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=7777)
+
