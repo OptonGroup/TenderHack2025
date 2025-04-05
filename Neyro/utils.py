@@ -401,6 +401,34 @@ class TextProcessor:
             for comp in entities.get('компоненты', []):  # Перебираем найденные компоненты
                 component = comp  # Устанавливаем компонент
                 break  # Берем первый найденный компонент
+        
+        # Определяем необходимость перевода на оператора
+        needs_operator = False
+        
+        # Ключевые слова, указывающие на необходимость оператора
+        operator_keywords = [
+            'оператор', 'специалист', 'поддержка', 'помогите', 'срочно', 'критично',
+            'соединить', 'человек', 'перевести на', 'переключить', 'живой человек'
+        ]
+        
+        # Критичные проблемы, требующие вмешательства оператора
+        critical_issues = [
+            'блокировка', 'взлом', 'утечка', 'недоступен', 'потеря данных', 
+            'деньги', 'оплата', 'счет', 'платеж', 'финансы', 'контракт разорван',
+            'угроза', 'штраф', 'санкции', 'срыв сроков', 'юрист'
+        ]
+        
+        # Проверяем наличие ключевых слов для оператора
+        if any(keyword in text_lower for keyword in operator_keywords):
+            needs_operator = True
+            
+        # Проверяем наличие критичных проблем
+        if query_type == 'error' and any(issue in text_lower for issue in critical_issues):
+            needs_operator = True
+            
+        # Проверяем сложность запроса (длинные запросы с множеством деталей)
+        if len(text.split()) > 20 and query_type == 'error':
+            needs_operator = True
                 
         # Формируем результат классификации
         classification = {
@@ -408,7 +436,8 @@ class TextProcessor:
             'user_role': user_role,  # Роль пользователя
             'component': component,  # Компонент системы
             'actions': list(entities.get('действия', [])),  # Список действий
-            'problems': list(entities.get('проблемы', []))  # Список проблем
+            'problems': list(entities.get('проблемы', [])),  # Список проблем
+            'needs_operator': needs_operator  # Флаг необходимости перевода на оператора
         }
         
         return classification  # Возвращаем результат классификации
