@@ -1,0 +1,752 @@
+{% extends "layout.html" %}
+
+{% block title %}База знаний - TenderHack Platform{% endblock %}
+
+{% block extra_css %}
+<style>
+    .knowledge-section {
+        padding: 3rem 0;
+    }
+    
+    .knowledge-header {
+        margin-bottom: 2rem;
+    }
+    
+    .search-box {
+        position: relative;
+        margin-bottom: 2rem;
+    }
+    
+    .search-input {
+        padding-left: 45px;
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow);
+        height: 50px;
+    }
+    
+    .search-icon {
+        position: absolute;
+        left: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--medium-gray);
+    }
+    
+    .filters-section {
+        background-color: var(--white);
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow);
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .filter-header {
+        margin-bottom: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .filter-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 0;
+    }
+    
+    .filter-clear {
+        font-size: 0.9rem;
+        color: var(--primary-color);
+        text-decoration: none;
+        cursor: pointer;
+    }
+    
+    .filter-group {
+        margin-bottom: 1.5rem;
+    }
+    
+    .filter-group:last-child {
+        margin-bottom: 0;
+    }
+    
+    .filter-label {
+        font-weight: 500;
+        margin-bottom: 0.75rem;
+    }
+    
+    .document-card {
+        background-color: var(--white);
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow);
+        margin-bottom: 1.5rem;
+        transition: var(--transition);
+        border: none;
+    }
+    
+    .document-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    }
+    
+    .document-card-body {
+        padding: 1.5rem;
+    }
+    
+    .document-icon {
+        background-color: rgba(var(--bs-primary-rgb), 0.1);
+        color: var(--primary-color);
+        width: 50px;
+        height: 50px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+    }
+    
+    .document-title {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+    
+    .document-meta {
+        display: flex;
+        align-items: center;
+        margin-top: 1rem;
+    }
+    
+    .document-meta-item {
+        display: flex;
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--medium-gray);
+        margin-right: 1rem;
+    }
+    
+    .document-meta-item i {
+        margin-right: 0.5rem;
+    }
+    
+    .document-tag {
+        display: inline-block;
+        background-color: rgba(var(--bs-primary-rgb), 0.1);
+        color: var(--primary-color);
+        padding: 0.25rem 0.75rem;
+        border-radius: 30px;
+        font-size: 0.85rem;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .pagination {
+        display: flex;
+        justify-content: center;
+        margin-top: 2rem;
+    }
+    
+    .pagination .page-item .page-link {
+        border-radius: 8px;
+        margin: 0 5px;
+        color: var(--dark-gray);
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: var(--primary-color);
+        border-color: var(--primary-color);
+        color: white;
+    }
+    
+    .no-results {
+        text-align: center;
+        padding: 3rem;
+        background-color: var(--white);
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow);
+    }
+    
+    .no-results-icon {
+        font-size: 3rem;
+        color: var(--medium-gray);
+        margin-bottom: 1rem;
+    }
+    
+    /* Анимации */
+    .animated-card {
+        animation: fadeInUp 0.5s ease-out forwards;
+        opacity: 0;
+    }
+    
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    /* Настройка задержки для карточек */
+    .animated-card:nth-child(1) { animation-delay: 0.1s; }
+    .animated-card:nth-child(2) { animation-delay: 0.2s; }
+    .animated-card:nth-child(3) { animation-delay: 0.3s; }
+    .animated-card:nth-child(4) { animation-delay: 0.4s; }
+    .animated-card:nth-child(5) { animation-delay: 0.5s; }
+    .animated-card:nth-child(6) { animation-delay: 0.6s; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="knowledge-section">
+    <div class="container">
+        <div class="knowledge-header animated-element">
+            <h2 class="mb-2">База знаний</h2>
+            <p class="text-muted">Доступ к документам, шаблонам и лучшим практикам для успешной работы с тендерами</p>
+        </div>
+        
+        <div class="search-box animated-element">
+            <input type="text" class="form-control search-input" id="search-input" placeholder="Поиск по базе знаний...">
+            <i class="bi bi-search search-icon"></i>
+        </div>
+        
+        <div class="row">
+            <div class="col-lg-3">
+                <div class="filters-section animated-element">
+                    <div class="filter-header">
+                        <h5 class="filter-title">Фильтры</h5>
+                        <a href="#" class="filter-clear" id="clear-filters">Очистить все</a>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <div class="filter-label">Категории</div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="category-1" value="legal">
+                            <label class="form-check-label" for="category-1">
+                                Юридические документы
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="category-2" value="financial">
+                            <label class="form-check-label" for="category-2">
+                                Финансовые документы
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="category-3" value="technical">
+                            <label class="form-check-label" for="category-3">
+                                Технические документы
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="category-4" value="templates">
+                            <label class="form-check-label" for="category-4">
+                                Шаблоны
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="category-5" value="guides">
+                            <label class="form-check-label" for="category-5">
+                                Руководства
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <div class="filter-label">Формат файла</div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="format-1" value="pdf">
+                            <label class="form-check-label" for="format-1">
+                                PDF
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="format-2" value="doc">
+                            <label class="form-check-label" for="format-2">
+                                DOC/DOCX
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="format-3" value="xls">
+                            <label class="form-check-label" for="format-3">
+                                XLS/XLSX
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="format-4" value="other">
+                            <label class="form-check-label" for="format-4">
+                                Другие форматы
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <div class="filter-label">Дата добавления</div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="date-filter" id="date-1" value="today">
+                            <label class="form-check-label" for="date-1">
+                                Сегодня
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="date-filter" id="date-2" value="week">
+                            <label class="form-check-label" for="date-2">
+                                За последнюю неделю
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="date-filter" id="date-3" value="month">
+                            <label class="form-check-label" for="date-3">
+                                За последний месяц
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="date-filter" id="date-4" value="all" checked>
+                            <label class="form-check-label" for="date-4">
+                                За все время
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-9">
+                <div class="row" id="documents-container">
+                    <!-- Документы будут добавлены динамически -->
+                </div>
+                
+                <nav aria-label="Навигация по страницам">
+                    <ul class="pagination" id="pagination">
+                        <li class="page-item disabled">
+                            <a class="page-link" href="#" tabindex="-1" aria-disabled="true">
+                                <i class="bi bi-chevron-left"></i>
+                            </a>
+                        </li>
+                        <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                        <li class="page-item"><a class="page-link" href="#">2</a></li>
+                        <li class="page-item"><a class="page-link" href="#">3</a></li>
+                        <li class="page-item">
+                            <a class="page-link" href="#">
+                                <i class="bi bi-chevron-right"></i>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Элементы страницы
+        const searchInput = document.getElementById('search-input');
+        const clearFiltersBtn = document.getElementById('clear-filters');
+        const documentsContainer = document.getElementById('documents-container');
+        const pagination = document.getElementById('pagination');
+        const categoryCheckboxes = document.querySelectorAll('input[id^="category-"]');
+        const formatCheckboxes = document.querySelectorAll('input[id^="format-"]');
+        const dateRadios = document.querySelectorAll('input[name="date-filter"]');
+        
+        // Глобальные переменные
+        let currentPage = 1;
+        const itemsPerPage = 6;
+        let documents = [];
+        let filteredDocuments = [];
+        
+        // Пример документов (в реальном приложении будут загружаться с сервера)
+        const sampleDocuments = [
+            {
+                id: 1,
+                title: "Шаблон технического задания",
+                description: "Готовый шаблон технического задания для участия в тендерах на разработку программного обеспечения.",
+                category: "templates",
+                format: "doc",
+                fileSize: "245 KB",
+                uploadDate: "2025-03-15",
+                tags: ["шаблоны", "техническое задание", "программное обеспечение"]
+            },
+            {
+                id: 2,
+                title: "Руководство по подготовке тендерной документации",
+                description: "Подробное руководство по подготовке всех необходимых документов для участия в государственных тендерах.",
+                category: "guides",
+                format: "pdf",
+                fileSize: "1.2 MB",
+                uploadDate: "2025-03-10",
+                tags: ["руководство", "тендерная документация", "госзакупки"]
+            },
+            {
+                id: 3,
+                title: "Финансовая модель для расчета стоимости проекта",
+                description: "Excel-шаблон для детального расчета стоимости проекта и формирования коммерческого предложения.",
+                category: "financial",
+                format: "xls",
+                fileSize: "780 KB",
+                uploadDate: "2025-03-05",
+                tags: ["финансы", "расчеты", "коммерческое предложение"]
+            },
+            {
+                id: 4,
+                title: "Типовой договор на выполнение работ",
+                description: "Юридически проверенный шаблон договора на выполнение работ с учетом требований законодательства.",
+                category: "legal",
+                format: "doc",
+                fileSize: "320 KB",
+                uploadDate: "2025-02-28",
+                tags: ["договор", "юридические документы"]
+            },
+            {
+                id: 5,
+                title: "Презентация компании для тендерных комиссий",
+                description: "Шаблон презентации компании для представления ее опыта и компетенций в тендерных комиссиях.",
+                category: "templates",
+                format: "ppt",
+                fileSize: "4.5 MB",
+                uploadDate: "2025-02-20",
+                tags: ["презентация", "шаблоны", "опыт компании"]
+            },
+            {
+                id: 6,
+                title: "Техническая спецификация оборудования",
+                description: "Пример технической спецификации для тендеров на поставку оборудования с подробным описанием требований.",
+                category: "technical",
+                format: "pdf",
+                fileSize: "890 KB",
+                uploadDate: "2025-02-15",
+                tags: ["спецификация", "оборудование", "технические требования"]
+            },
+            {
+                id: 7,
+                title: "Анализ рынка государственных закупок",
+                description: "Отчет с анализом рынка государственных закупок, включая статистику и тренды по различным отраслям.",
+                category: "guides",
+                format: "pdf",
+                fileSize: "2.3 MB",
+                uploadDate: "2025-02-10",
+                tags: ["анализ", "госзакупки", "статистика"]
+            },
+            {
+                id: 8,
+                title: "Регламент участия в электронных торгах",
+                description: "Подробный регламент процедуры участия в электронных торгах с пошаговыми инструкциями.",
+                category: "guides",
+                format: "doc",
+                fileSize: "410 KB",
+                uploadDate: "2025-02-05",
+                tags: ["электронные торги", "инструкция", "регламент"]
+            }
+        ];
+        
+        // Инициализация
+        init();
+        
+        // Инициализация страницы
+        function init() {
+            // Загружаем документы (в данном случае используем тестовые данные)
+            documents = sampleDocuments;
+            filteredDocuments = [...documents];
+            
+            // Отображаем документы
+            renderDocuments();
+            
+            // Настраиваем обработчики событий
+            setupEventListeners();
+        }
+        
+        // Настройка обработчиков событий
+        function setupEventListeners() {
+            // Поиск
+            searchInput.addEventListener('input', filterDocuments);
+            
+            // Очистка фильтров
+            clearFiltersBtn.addEventListener('click', clearFilters);
+            
+            // Фильтры категорий
+            categoryCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', filterDocuments);
+            });
+            
+            // Фильтры форматов
+            formatCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', filterDocuments);
+            });
+            
+            // Фильтры даты
+            dateRadios.forEach(radio => {
+                radio.addEventListener('change', filterDocuments);
+            });
+            
+            // Обработка пагинации
+            pagination.addEventListener('click', handlePagination);
+        }
+        
+        // Отображение документов
+        function renderDocuments() {
+            // Очищаем контейнер
+            documentsContainer.innerHTML = '';
+            
+            // Если документов нет, показываем сообщение
+            if (filteredDocuments.length === 0) {
+                documentsContainer.innerHTML = `
+                    <div class="col-12">
+                        <div class="no-results">
+                            <div class="no-results-icon">
+                                <i class="bi bi-search"></i>
+                            </div>
+                            <h4>Документы не найдены</h4>
+                            <p class="text-muted">Попробуйте изменить параметры поиска или фильтры</p>
+                            <button class="btn btn-outline-primary mt-3" onclick="clearFilters()">Сбросить фильтры</button>
+                        </div>
+                    </div>
+                `;
+                
+                // Скрываем пагинацию
+                pagination.style.display = 'none';
+                
+                return;
+            }
+            
+            // Расчет пагинации
+            const totalPages = Math.ceil(filteredDocuments.length / itemsPerPage);
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, filteredDocuments.length);
+            
+            // Отображаем документы текущей страницы
+            for (let i = startIndex; i < endIndex; i++) {
+                const doc = filteredDocuments[i];
+                const uploadDate = new Date(doc.uploadDate).toLocaleDateString('ru-RU');
+                
+                // Формируем теги
+                let tagsHtml = '';
+                doc.tags.forEach(tag => {
+                    tagsHtml += `<span class="document-tag">${tag}</span>`;
+                });
+                
+                // Определяем иконку для типа файла
+                let fileIcon = '';
+                switch (doc.format) {
+                    case 'pdf':
+                        fileIcon = 'bi-file-earmark-pdf';
+                        break;
+                    case 'doc':
+                        fileIcon = 'bi-file-earmark-word';
+                        break;
+                    case 'xls':
+                        fileIcon = 'bi-file-earmark-excel';
+                        break;
+                    case 'ppt':
+                        fileIcon = 'bi-file-earmark-slides';
+                        break;
+                    default:
+                        fileIcon = 'bi-file-earmark-text';
+                }
+                
+                const docHtml = `
+                    <div class="col-md-6 col-lg-4 animated-card">
+                        <div class="document-card">
+                            <div class="document-card-body">
+                                <div class="d-flex align-items-center mb-3">
+                                    <div class="document-icon">
+                                        <i class="bi ${fileIcon} fs-4"></i>
+                                    </div>
+                                    <div>
+                                        <h5 class="document-title">${doc.title}</h5>
+                                        <small class="text-muted">${doc.format.toUpperCase()} · ${doc.fileSize}</small>
+                                    </div>
+                                </div>
+                                <p class="card-text text-muted mb-3">${doc.description}</p>
+                                <div class="document-tags mb-3">
+                                    ${tagsHtml}
+                                </div>
+                                <div class="document-meta">
+                                    <div class="document-meta-item">
+                                        <i class="bi bi-calendar3"></i>
+                                        <span>${uploadDate}</span>
+                                    </div>
+                                    <a href="#" class="btn btn-sm btn-outline-primary ms-auto">Скачать</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                documentsContainer.innerHTML += docHtml;
+            }
+            
+            // Обновляем пагинацию
+            renderPagination(totalPages);
+        }
+        
+        // Отображение пагинации
+        function renderPagination(totalPages) {
+            // Показываем пагинацию, если есть больше 1 страницы
+            if (totalPages <= 1) {
+                pagination.style.display = 'none';
+                return;
+            }
+            
+            pagination.style.display = 'flex';
+            
+            // Формируем элементы пагинации
+            let paginationHtml = `
+                <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" data-page="${currentPage - 1}" aria-label="Предыдущая">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+            `;
+            
+            // Добавляем страницы
+            for (let i = 1; i <= totalPages; i++) {
+                paginationHtml += `
+                    <li class="page-item ${i === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${i}">${i}</a>
+                    </li>
+                `;
+            }
+            
+            paginationHtml += `
+                <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                    <a class="page-link" href="#" data-page="${currentPage + 1}" aria-label="Следующая">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+            `;
+            
+            pagination.innerHTML = paginationHtml;
+        }
+        
+        // Обработка переключения страниц пагинации
+        function handlePagination(e) {
+            e.preventDefault();
+            
+            // Проверяем, был ли клик по ссылке страницы
+            if (e.target.tagName === 'A' || e.target.parentElement.tagName === 'A') {
+                const link = e.target.closest('a');
+                if (!link) return;
+                
+                // Если страница находится в disabled состоянии, не делаем ничего
+                if (link.parentElement.classList.contains('disabled')) {
+                    return;
+                }
+                
+                // Получаем номер страницы
+                const page = parseInt(link.getAttribute('data-page'));
+                if (isNaN(page)) return;
+                
+                // Обновляем текущую страницу
+                currentPage = page;
+                
+                // Обновляем отображение документов
+                renderDocuments();
+                
+                // Прокручиваем страницу вверх
+                window.scrollTo({
+                    top: documentsContainer.offsetTop - 100,
+                    behavior: 'smooth'
+                });
+            }
+        }
+        
+        // Фильтрация документов
+        function filterDocuments() {
+            // Получаем текст поиска
+            const searchText = searchInput.value.toLowerCase();
+            
+            // Получаем выбранные категории
+            const selectedCategories = Array.from(categoryCheckboxes)
+                .filter(checkbox => checkbox.checked)
+                .map(checkbox => checkbox.value);
+            
+            // Получаем выбранные форматы
+            const selectedFormats = Array.from(formatCheckboxes)
+                .filter(checkbox => checkbox.checked)
+                .map(checkbox => checkbox.value);
+            
+            // Получаем выбранный фильтр даты
+            const dateFilter = Array.from(dateRadios)
+                .find(radio => radio.checked)?.value || 'all';
+            
+            // Фильтруем документы
+            filteredDocuments = documents.filter(doc => {
+                // Фильтр по тексту поиска
+                const matchesSearch = 
+                    searchText === '' || 
+                    doc.title.toLowerCase().includes(searchText) || 
+                    doc.description.toLowerCase().includes(searchText) ||
+                    doc.tags.some(tag => tag.toLowerCase().includes(searchText));
+                
+                // Фильтр по категории
+                const matchesCategory = 
+                    selectedCategories.length === 0 || 
+                    selectedCategories.includes(doc.category);
+                
+                // Фильтр по формату
+                const matchesFormat = 
+                    selectedFormats.length === 0 || 
+                    selectedFormats.includes(doc.format);
+                
+                // Фильтр по дате
+                let matchesDate = true;
+                if (dateFilter !== 'all') {
+                    const uploadDate = new Date(doc.uploadDate);
+                    const today = new Date();
+                    const diffTime = Math.abs(today - uploadDate);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    switch (dateFilter) {
+                        case 'today':
+                            matchesDate = diffDays <= 1;
+                            break;
+                        case 'week':
+                            matchesDate = diffDays <= 7;
+                            break;
+                        case 'month':
+                            matchesDate = diffDays <= 30;
+                            break;
+                    }
+                }
+                
+                return matchesSearch && matchesCategory && matchesFormat && matchesDate;
+            });
+            
+            // Сбрасываем текущую страницу на первую
+            currentPage = 1;
+            
+            // Обновляем отображение документов
+            renderDocuments();
+        }
+        
+        // Очистка всех фильтров
+        function clearFilters() {
+            // Очищаем поле поиска
+            searchInput.value = '';
+            
+            // Снимаем выбор с категорий
+            categoryCheckboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            
+            // Снимаем выбор с форматов
+            formatCheckboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            
+            // Устанавливаем фильтр даты "За все время"
+            document.getElementById('date-4').checked = true;
+            
+            // Сбрасываем фильтрацию
+            filteredDocuments = [...documents];
+            currentPage = 1;
+            
+            // Обновляем отображение документов
+            renderDocuments();
+        }
+        
+        // Экспортируем функцию очистки фильтров для доступа из HTML
+        window.clearFilters = clearFilters;
+    });
+</script>
+{% endblock %} 

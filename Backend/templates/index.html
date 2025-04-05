@@ -1,49 +1,309 @@
-{% extends "base.html" %}
+{% extends "layout.html" %}
 
-{% block title %}Портал Поставщиков{% endblock %}
+{% block title %}TenderHack Platform - Инновационная платформа для тендеров{% endblock %}
+
+{% block extra_css %}
+<style>
+    .hero-bg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,249,250,0.8) 100%);
+        z-index: -1;
+    }
+
+    .hero-pattern {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 50%;
+        height: 100%;
+        background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cmVjdCB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSIjZmZmIj48L3JlY3Q+CjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNlNjM5NDYiPjwvcmVjdD4KPC9zdmc+');
+        opacity: 0.1;
+        z-index: -1;
+    }
+
+    .hero-title {
+        font-size: 3.5rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+    }
+
+    .hero-subtitle {
+        font-size: 1.25rem;
+        margin-bottom: 2rem;
+        color: var(--medium-gray);
+    }
+
+    .hero-image {
+        max-height: 500px;
+        width: auto;
+    }
+
+    .stats-item {
+        text-align: center;
+        padding: 2rem;
+    }
+
+    .stats-number {
+        font-size: 3rem;
+        font-weight: 700;
+        color: var(--primary-color);
+        margin-bottom: 0.5rem;
+    }
+
+    .stats-label {
+        color: var(--medium-gray);
+        font-weight: 500;
+    }
+
+    .svg-bg {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        z-index: -1;
+    }
+
+    .features-section {
+        position: relative;
+    }
+
+    .cta-section {
+        background-color: var(--primary-color);
+        padding: 5rem 0;
+        color: white;
+        border-radius: var(--border-radius);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .cta-pattern {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1IiBoZWlnaHQ9IjUiPgo8cmVjdCB3aWR0aD0iNSIgaGVpZ2h0PSI1IiBmaWxsPSJub25lIj48L3JlY3Q+CjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IiNmZmZmZmYiIG9wYWNpdHk9IjAuMiI+PC9yZWN0Pgo8L3N2Zz4=');
+        opacity: 0.3;
+        z-index: 0;
+    }
+
+    .cta-content {
+        position: relative;
+        z-index: 1;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row align-items-center gx-5">
-    <div class="col-lg-7">
-        <div class="welcome-section mb-5 mb-lg-0">
-            <h1 class="welcome-title">Добро пожаловать на Портал Поставщиков</h1>
-            <p class="lead my-4">Единая площадка для участия в тендерах, размещения заказов и взаимодействия с государственными заказчиками. Упростите свой путь к государственным контрактам вместе с нами.</p>
-            <div class="d-grid gap-2 d-md-flex justify-content-md-start mt-4">
-                <a href="/register" class="btn btn-primary btn-lg me-md-2">Зарегистрироваться</a>
-                <a href="#" class="btn btn-outline-secondary btn-lg">Узнать больше</a>
+<!-- Героический раздел -->
+<section class="hero-section animated-element">
+    <div class="hero-bg"></div>
+    <div class="hero-pattern"></div>
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-6 pe-lg-5">
+                <h1 class="hero-title animated-element">Инновационная платформа<br>для <span class="text-danger">тендеров</span></h1>
+                <p class="hero-subtitle animated-element">TenderHack Platform объединяет возможности управления тендерами и мощь искусственного интеллекта для максимальной эффективности.</p>
+                <div class="d-flex gap-3 animated-element">
+                    <a href="/register" class="btn btn-primary">Начать бесплатно</a>
+                    <a href="#features" class="btn btn-outline-dark">Узнать больше</a>
+                </div>
+            </div>
+            <div class="col-lg-6 mt-5 mt-lg-0">
+                <img src="https://psv4.userapi.com/s/v1/d/eE3Dz4uwFcnenv34bQgt1UePR5y5lHu0v4HjHVrx_E5BfLl3Kevqr1CB-WKFj191KYqNV6Pc77-h5UVfv3pGSJ9CqSC9CsiGIH12gA0KT-iwfa9BsOUIZQ/7ff369c8-8b84-4c57-aca2-15f6cbdaf77d_removalai_preview.png" alt="TenderHack Platform" class="img-fluid hero-image animated-element" style="transform: scaleX(-1) !important ;">
             </div>
         </div>
     </div>
-    <div class="col-lg-5">
-        <div class="card login-card">
-            <div class="card-body p-4">
-                <h2 class="card-title text-center mb-4">Вход в систему</h2>
-                <form id="loginForm" class="login-form">
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Имя пользователя</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
+    <svg class="svg-bg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320">
+        <path fill="#f8f9fa" fill-opacity="1" d="M0,192L48,176C96,160,192,128,288,144C384,160,480,224,576,224C672,224,768,160,864,149.3C960,139,1056,181,1152,181.3C1248,181,1344,139,1392,117.3L1440,96L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path>
+    </svg>
+</section>
+
+<!-- Статистика -->
+<section class="py-5 bg-light">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="stats-item scroll-trigger">
+                    <div class="stats-number" id="stats-users">0</div>
+                    <div class="stats-label">Пользователей</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-item scroll-trigger">
+                    <div class="stats-number" id="stats-tenders">0</div>
+                    <div class="stats-label">Тендеров проведено</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stats-item scroll-trigger">
+                    <div class="stats-number" id="stats-accuracy">0%</div>
+                    <div class="stats-label">Точность AI</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Особенности -->
+<section id="features" class="section features-section">
+    <div class="container">
+        <div class="row justify-content-center mb-5">
+            <div class="col-lg-8 text-center">
+                <h2 class="section-title text-center scroll-trigger">Особенности платформы</h2>
+                <p class="text-muted scroll-trigger">Наша платформа предлагает мощные инструменты для управления тендерами, анализа данных и получения ценных рекомендаций от искусственного интеллекта.</p>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card h-100 scroll-trigger">
+                    <div class="feature-icon">
+                        <i class="bi bi-robot"></i>
                     </div>
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Пароль</label>
-                        <div class="input-group">
-                            <input type="password" class="form-control" id="password" name="password" required>
-                            <button class="btn btn-outline-secondary toggle-password" type="button">
-                                <i class="fa fa-eye"></i>
-                            </button>
+                    <h4>AI Чат-ассистент</h4>
+                    <p class="text-muted">Получайте мгновенные ответы и рекомендации от интеллектуального ассистента, обученного на десятках тысяч тендеров.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card h-100 scroll-trigger">
+                    <div class="feature-icon">
+                        <i class="bi bi-database-check"></i>
+                    </div>
+                    <h4>База знаний</h4>
+                    <p class="text-muted">Доступ к структурированной базе знаний с примерами документов, шаблонами и лучшими практиками.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card h-100 scroll-trigger">
+                    <div class="feature-icon">
+                        <i class="bi bi-graph-up"></i>
+                    </div>
+                    <h4>Аналитика тендеров</h4>
+                    <p class="text-muted">Подробная аналитика и статистика по тендерам, помогающая принимать более обоснованные решения.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card h-100 scroll-trigger">
+                    <div class="feature-icon">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <h4>Безопасность данных</h4>
+                    <p class="text-muted">Современные методы шифрования и защиты обеспечивают полную безопасность ваших данных.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card h-100 scroll-trigger">
+                    <div class="feature-icon">
+                        <i class="bi bi-lightning-charge"></i>
+                    </div>
+                    <h4>Высокая производительность</h4>
+                    <p class="text-muted">Быстрая обработка данных и мгновенный доступ к информации в любое время и с любого устройства.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-4">
+                <div class="card feature-card h-100 scroll-trigger">
+                    <div class="feature-icon">
+                        <i class="bi bi-people"></i>
+                    </div>
+                    <h4>Командная работа</h4>
+                    <p class="text-muted">Инструменты для эффективной работы команды над тендерами, включая комментарии и историю изменений.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Как это работает -->
+<section class="section bg-light">
+    <div class="container">
+        <div class="row justify-content-center mb-5">
+            <div class="col-lg-8 text-center">
+                <h2 class="section-title text-center scroll-trigger">Как это работает</h2>
+                <p class="text-muted scroll-trigger">Всего несколько простых шагов отделяют вас от использования всех возможностей нашей платформы.</p>
+            </div>
+        </div>
+        
+        <div class="row align-items-center">
+            <div class="col-lg-6">
+                <div class="scroll-trigger">
+                    <div class="d-flex mb-4">
+                        <div class="me-4">
+                            <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">1</div>
+                        </div>
+                        <div>
+                            <h4>Создайте аккаунт</h4>
+                            <p class="text-muted">Зарегистрируйтесь на платформе, чтобы получить доступ ко всем функциям.</p>
                         </div>
                     </div>
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="rememberMe" name="rememberMe">
-                        <label class="form-check-label" for="rememberMe">Запомнить меня</label>
+                </div>
+                
+                <div class="scroll-trigger">
+                    <div class="d-flex mb-4">
+                        <div class="me-4">
+                            <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">2</div>
+                        </div>
+                        <div>
+                            <h4>Исследуйте базу знаний</h4>
+                            <p class="text-muted">Получите доступ к обширной библиотеке документов и лучших практик.</p>
+                        </div>
                     </div>
-                    <div class="alert alert-danger d-none" id="loginError"></div>
-                    <button type="submit" class="btn btn-primary w-100">Войти</button>
-                    <div class="text-center mt-3">
-                        <a href="#" class="text-decoration-none">Забыли пароль?</a>
+                </div>
+                
+                <div class="scroll-trigger">
+                    <div class="d-flex mb-4">
+                        <div class="me-4">
+                            <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">3</div>
+                        </div>
+                        <div>
+                            <h4>Получите помощь AI</h4>
+                            <p class="text-muted">Используйте AI-чат для получения рекомендаций и ответов на ваши вопросы.</p>
+                        </div>
                     </div>
-                </form>
+                </div>
+                
+                <div class="scroll-trigger">
+                    <div class="d-flex">
+                        <div class="me-4">
+                            <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">4</div>
+                        </div>
+                        <div>
+                            <h4>Наслаждайтесь результатами</h4>
+                            <p class="text-muted">Повысьте эффективность работы с тендерами благодаря нашей платформе.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6 mt-5 mt-lg-0">
+                <img src="https://psv4.userapi.com/s/v1/d/w7cyaF7W5cUPCGDyn8SzZ0JGPGWre-wO5ppPdDFJMZXyInToq8RbIx1zh0nyhHj7AWqdbf6WLypo4ujSkUv-M2RQzdqCgu2zPRzBJo4mPVHxihUte9GLzQ/1bcb6c78-0360-41f9-a636-b6fc200c1f75_removalai_preview.png" alt="How it works" class="img-fluid rounded scroll-trigger">
             </div>
         </div>
     </div>
-</div>
+</section>
+
+<!-- CTA -->
+<section class="section">
+    <div class="container">
+        <div class="cta-section">
+            <div class="cta-pattern"></div>
+            <div class="cta-content">
+                <div class="row justify-content-center">
+                    <div class="col-lg-8 text-center">
+                        <h2 class="mb-4 scroll-trigger">Готовы начать?</h2>
+                        <p class="mb-5 scroll-trigger">Присоединяйтесь к тысячам пользователей, которые уже используют TenderHack Platform для повышения эффективности работы с тендерами.</p>
+                        <a href="/register" class="btn btn-light btn-lg px-5 scroll-trigger">Создать аккаунт бесплатно</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='js/index.js') }}"></script>
 {% endblock %} 

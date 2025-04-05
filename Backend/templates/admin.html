@@ -1,0 +1,417 @@
+{% extends "layout.html" %}
+
+{% block title %}Панель администратора{% endblock %}
+
+{% block styles %}
+<style>
+    .stat-card {
+        transition: all 0.3s ease;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    }
+    
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+    }
+    
+    .stat-label {
+        color: #6c757d;
+        font-weight: 500;
+    }
+    
+    .user-table-container {
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        background-color: #e9ecef;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    .role-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.85rem;
+    }
+    
+    .role-admin {
+        background-color: #dc3545;
+        color: white;
+    }
+    
+    .role-operator {
+        background-color: #fd7e14;
+        color: white;
+    }
+    
+    .role-user {
+        background-color: #6c757d;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <h2 class="mb-4">
+        <i class="fas fa-sliders-h me-2"></i>
+        Панель администратора
+    </h2>
+    
+    <!-- Статистика -->
+    <div class="row mb-5">
+        <div class="col-md-3 mb-4">
+            <div class="card stat-card h-100">
+                <div class="card-body text-center">
+                    <div class="stat-value text-primary" id="stat-users">{{ user_count }}</div>
+                    <div class="stat-label">Пользователей</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card stat-card h-100">
+                <div class="card-body text-center">
+                    <div class="stat-value text-success" id="stat-tenders">{{ tender_count }}</div>
+                    <div class="stat-label">Тендеров</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card stat-card h-100">
+                <div class="card-body text-center">
+                    <div class="stat-value text-warning" id="stat-operators">{{ operator_count }}</div>
+                    <div class="stat-label">Операторов</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card stat-card h-100">
+                <div class="card-body text-center">
+                    <div class="stat-value text-danger" id="stat-requests">{{ support_request_count }}</div>
+                    <div class="stat-label">Активных заявок</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Вкладки -->
+    <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab" aria-controls="users" aria-selected="true">
+                <i class="fas fa-users me-2"></i>
+                Пользователи
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="recent-tab" data-bs-toggle="tab" data-bs-target="#recent" type="button" role="tab" aria-controls="recent" aria-selected="false">
+                <i class="fas fa-history me-2"></i>
+                Недавние пользователи
+            </button>
+        </li>
+    </ul>
+    
+    <!-- Содержимое вкладок -->
+    <div class="tab-content" id="adminTabContent">
+        <!-- Пользователи -->
+        <div class="tab-pane fade show active" id="users" role="tabpanel" aria-labelledby="users-tab">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Управление пользователями</h5>
+                    <div class="input-group w-50">
+                        <span class="input-group-text">
+                            <i class="fas fa-search"></i>
+                        </span>
+                        <input type="text" class="form-control" id="userSearchInput" placeholder="Поиск пользователей...">
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Здесь вы можете управлять ролями пользователей. Нажмите на значок карандаша, чтобы изменить роль пользователя.
+                    </div>
+                    
+                    <div class="user-table-container">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">Пользователь</th>
+                                    <th scope="col">Email</th>
+                                    <th scope="col">Роль</th>
+                                    <th scope="col">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <!-- Здесь будет список пользователей -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Недавние пользователи -->
+        <div class="tab-pane fade" id="recent" role="tabpanel" aria-labelledby="recent-tab">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Недавно зарегистрированные пользователи</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">Пользователь</th>
+                                    <th scope="col">Email</th>
+                                    <th scope="col">Дата регистрации</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in recent_users %}
+                                <tr>
+                                    <td>{{ user.id }}</td>
+                                    <td>{{ user.username }}</td>
+                                    <td>{{ user.email }}</td>
+                                    <td>{{ user.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для изменения роли -->
+<div class="modal fade" id="changeRoleModal" tabindex="-1" aria-labelledby="changeRoleModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="changeRoleModalLabel">Изменение роли пользователя</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="changeRoleForm">
+                    <input type="hidden" id="userId" name="userId">
+                    
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Пользователь</label>
+                        <input type="text" class="form-control" id="username" readonly>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="roleSelect" class="form-label">Роль</label>
+                        <select class="form-select" id="roleSelect" name="role">
+                            <option value="user">Пользователь</option>
+                            <option value="operator">Оператор</option>
+                            <option value="admin">Администратор</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="saveRoleBtn">Сохранить</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', async function() {
+        const usersTableBody = document.getElementById('usersTableBody');
+        const userSearchInput = document.getElementById('userSearchInput');
+        const changeRoleModal = new bootstrap.Modal(document.getElementById('changeRoleModal'));
+        const changeRoleForm = document.getElementById('changeRoleForm');
+        const userId = document.getElementById('userId');
+        const username = document.getElementById('username');
+        const roleSelect = document.getElementById('roleSelect');
+        const saveRoleBtn = document.getElementById('saveRoleBtn');
+        
+        let users = []; // Массив для хранения данных пользователей
+        
+        // Загрузка списка пользователей
+        async function loadUsers() {
+            try {
+                users = await api.getUsers();
+                renderUsers(users);
+            } catch (error) {
+                console.error('Ошибка при загрузке пользователей:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Ошибка',
+                    text: 'Не удалось загрузить список пользователей. Пожалуйста, попробуйте позже.',
+                });
+            }
+        }
+        
+        // Отображение пользователей в таблице
+        function renderUsers(usersToRender) {
+            usersTableBody.innerHTML = '';
+            
+            usersToRender.forEach(user => {
+                const row = document.createElement('tr');
+                
+                // Определяем класс для бэйджа роли
+                let roleBadgeClass = '';
+                switch (user.role) {
+                    case 'admin':
+                        roleBadgeClass = 'role-admin';
+                        break;
+                    case 'operator':
+                        roleBadgeClass = 'role-operator';
+                        break;
+                    default:
+                        roleBadgeClass = 'role-user';
+                }
+                
+                // Формируем инициалы для аватара
+                const initials = user.username
+                    .split(' ')
+                    .map(name => name.charAt(0))
+                    .join('')
+                    .substring(0, 2)
+                    .toUpperCase();
+                
+                row.innerHTML = `
+                    <td>${user.id}</td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="user-avatar me-2">${initials}</div>
+                            ${user.username}
+                        </div>
+                    </td>
+                    <td>${user.email}</td>
+                    <td>
+                        <span class="role-badge ${roleBadgeClass}">
+                            ${user.role === 'admin' ? 'Администратор' : (user.role === 'operator' ? 'Оператор' : 'Пользователь')}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary edit-role-btn" data-user-id="${user.id}" data-username="${user.username}" data-role="${user.role}">
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                    </td>
+                `;
+                
+                usersTableBody.appendChild(row);
+            });
+            
+            // Добавляем обработчики для кнопок изменения роли
+            document.querySelectorAll('.edit-role-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const userData = this.dataset;
+                    showChangeRoleModal(userData.userId, userData.username, userData.role);
+                });
+            });
+        }
+        
+        // Показать модальное окно изменения роли
+        function showChangeRoleModal(id, name, role) {
+            userId.value = id;
+            username.value = name;
+            roleSelect.value = role;
+            
+            changeRoleModal.show();
+        }
+        
+        // Обработчик поиска пользователей
+        userSearchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            
+            if (searchTerm === '') {
+                renderUsers(users);
+                return;
+            }
+            
+            const filteredUsers = users.filter(user => 
+                user.username.toLowerCase().includes(searchTerm) || 
+                user.email.toLowerCase().includes(searchTerm)
+            );
+            
+            renderUsers(filteredUsers);
+        });
+        
+        // Обработчик для сохранения изменения роли
+        saveRoleBtn.addEventListener('click', async function() {
+            const id = parseInt(userId.value);
+            const role = roleSelect.value;
+            
+            try {
+                // Показываем индикатор загрузки
+                Swal.fire({
+                    title: 'Сохранение...',
+                    text: 'Пожалуйста, подождите',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+                
+                // Отправляем запрос на изменение роли
+                const updatedUser = await api.updateUserRole(id, role);
+                
+                // Обновляем данные пользователя в массиве
+                const userIndex = users.findIndex(user => user.id === id);
+                if (userIndex !== -1) {
+                    users[userIndex] = updatedUser;
+                }
+                
+                // Перерисовываем таблицу
+                renderUsers(users);
+                
+                // Закрываем модальное окно
+                changeRoleModal.hide();
+                
+                // Показываем сообщение об успехе
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Готово!',
+                    text: 'Роль пользователя успешно изменена',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                
+                // Обновляем статистику
+                updateStatistics();
+            } catch (error) {
+                console.error('Ошибка при изменении роли:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Ошибка',
+                    text: error.message || 'Не удалось изменить роль пользователя. Пожалуйста, попробуйте позже.',
+                });
+            }
+        });
+        
+        // Обновление статистики
+        function updateStatistics() {
+            const userCount = users.length;
+            const operatorCount = users.filter(user => user.role === 'operator').length;
+            
+            document.getElementById('stat-users').textContent = userCount;
+            document.getElementById('stat-operators').textContent = operatorCount;
+        }
+        
+        // Загружаем список пользователей при загрузке страницы
+        loadUsers();
+    });
+</script>
+{% endblock %} 

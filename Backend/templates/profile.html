@@ -1,231 +1,612 @@
-{% extends "base.html" %}
+{% extends "layout.html" %}
 
-{% block title %}Профиль пользователя - Портал Поставщиков{% endblock %}
+{% block title %}Профиль - TenderHack Platform{% endblock %}
 
-{% block content %}
-<div class="row">
-    <div class="col-md-3">
-        <div class="card mb-4">
-            <div class="card-body text-center">
-                <img src="/static/img/profile-avatar.png" alt="Фото профиля" class="rounded-circle img-fluid mb-3" style="width: 150px;">
-                <h5 class="card-title">Иванов Иван</h5>
-                <p class="text-muted">Поставщик</p>
-                <div class="d-grid gap-2">
-                    <button class="btn btn-primary">Редактировать профиль</button>
-                    <button class="btn btn-outline-secondary">Настройки</button>
-                </div>
-            </div>
-        </div>
-        <div class="card mb-4">
-            <div class="card-header">Навигация</div>
-            <div class="list-group list-group-flush">
-                <a href="#" class="list-group-item list-group-item-action active">
-                    <i class="fas fa-tachometer-alt me-2"></i> Панель управления
-                </a>
-                <a href="#" class="list-group-item list-group-item-action">
-                    <i class="fas fa-file-contract me-2"></i> Контракты
-                </a>
-                <a href="#" class="list-group-item list-group-item-action">
-                    <i class="fas fa-gavel me-2"></i> Тендеры
-                </a>
-                <a href="#" class="list-group-item list-group-item-action">
-                    <i class="fas fa-building me-2"></i> Моя организация
-                </a>
-                <a href="#" class="list-group-item list-group-item-action">
-                    <i class="fas fa-cogs me-2"></i> Настройки
-                </a>
-                <a href="#" class="list-group-item list-group-item-action text-danger">
-                    <i class="fas fa-sign-out-alt me-2"></i> Выйти
-                </a>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-9">
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Статистика</h5>
-                <div class="dropdown">
-                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                        За последний месяц
-                    </button>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="#">За неделю</a></li>
-                        <li><a class="dropdown-item" href="#">За месяц</a></li>
-                        <li><a class="dropdown-item" href="#">За квартал</a></li>
-                        <li><a class="dropdown-item" href="#">За год</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-3 mb-3">
-                        <div class="stat-card bg-primary text-white p-3 rounded">
-                            <h3 class="stat-number">12</h3>
-                            <p class="stat-title mb-0">Активные контракты</p>
-                        </div>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <div class="stat-card bg-success text-white p-3 rounded">
-                            <h3 class="stat-number">5</h3>
-                            <p class="stat-title mb-0">Выигранные тендеры</p>
-                        </div>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <div class="stat-card bg-warning text-white p-3 rounded">
-                            <h3 class="stat-number">8</h3>
-                            <p class="stat-title mb-0">Ожидающие решения</p>
-                        </div>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <div class="stat-card bg-danger text-white p-3 rounded">
-                            <h3 class="stat-number">3</h3>
-                            <p class="stat-title mb-0">Отклоненные заявки</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="mt-4">
-                    <canvas id="statisticsChart"></canvas>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Активные тендеры</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>№</th>
-                                <th>Название</th>
-                                <th>Заказчик</th>
-                                <th>Сумма</th>
-                                <th>Дедлайн</th>
-                                <th>Статус</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>1</td>
-                                <td>Поставка компьютерного оборудования</td>
-                                <td>АО "ТехноСтар"</td>
-                                <td>₽1,250,000</td>
-                                <td>15.04.2025</td>
-                                <td><span class="badge bg-warning text-dark">В процессе</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-primary">Просмотр</button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td>2</td>
-                                <td>Услуги по ремонту офисных помещений</td>
-                                <td>ООО "Стройкомплекс"</td>
-                                <td>₽3,800,000</td>
-                                <td>22.04.2025</td>
-                                <td><span class="badge bg-success">Одобрено</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-primary">Просмотр</button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td>3</td>
-                                <td>Поставка канцелярских товаров</td>
-                                <td>ГБОУ СОШ №123</td>
-                                <td>₽450,000</td>
-                                <td>10.04.2025</td>
-                                <td><span class="badge bg-danger">Просрочено</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-primary">Просмотр</button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="text-end mt-3">
-                    <a href="#" class="btn btn-outline-primary">Показать все</a>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Последние уведомления</h5>
-            </div>
-            <div class="card-body">
-                <div class="notification-item d-flex align-items-start mb-3 pb-3 border-bottom">
-                    <div class="notification-icon bg-info text-white rounded-circle p-2 me-3">
-                        <i class="fas fa-bell"></i>
-                    </div>
-                    <div class="notification-content">
-                        <h6 class="mb-1">Новый тендер</h6>
-                        <p class="text-muted mb-1">Опубликован новый тендер, соответствующий вашему профилю: "Поставка медицинского оборудования"</p>
-                        <small class="text-muted">2 часа назад</small>
-                    </div>
-                </div>
-                <div class="notification-item d-flex align-items-start mb-3 pb-3 border-bottom">
-                    <div class="notification-icon bg-success text-white rounded-circle p-2 me-3">
-                        <i class="fas fa-check"></i>
-                    </div>
-                    <div class="notification-content">
-                        <h6 class="mb-1">Заявка одобрена</h6>
-                        <p class="text-muted mb-1">Ваша заявка на участие в тендере "Поставка компьютерного оборудования" одобрена.</p>
-                        <small class="text-muted">1 день назад</small>
-                    </div>
-                </div>
-                <div class="notification-item d-flex align-items-start">
-                    <div class="notification-icon bg-warning text-white rounded-circle p-2 me-3">
-                        <i class="fas fa-exclamation-triangle"></i>
-                    </div>
-                    <div class="notification-content">
-                        <h6 class="mb-1">Напоминание о дедлайне</h6>
-                        <p class="text-muted mb-1">До окончания приема заявок на тендер "Услуги по ремонту офисных помещений" осталось 3 дня.</p>
-                        <small class="text-muted">2 дня назад</small>
-                    </div>
-                </div>
-            </div>
-            <div class="card-footer text-end">
-                <a href="#" class="btn btn-sm btn-outline-primary">Все уведомления</a>
-            </div>
-        </div>
-    </div>
-</div>
+{% block extra_css %}
+<style>
+    .profile-section {
+        padding: 3rem 0;
+    }
+    
+    .profile-header {
+        background-color: var(--white);
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        box-shadow: var(--box-shadow);
+        margin-bottom: 2rem;
+    }
+    
+    .avatar-container {
+        position: relative;
+        width: 150px;
+        height: 150px;
+        margin: 0 auto 1.5rem;
+    }
+    
+    .profile-tabs .nav-link {
+        color: var(--dark-gray);
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        margin-right: 0.5rem;
+    }
+    
+    .profile-tabs .nav-link.active {
+        background-color: var(--primary-color);
+        color: white;
+    }
+    
+    .tab-content {
+        background-color: var(--white);
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        box-shadow: var(--box-shadow);
+    }
+    
+    .activity-item {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--light-gray);
+    }
+    
+    .activity-item:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+    
+    .activity-icon {
+        width: 45px;
+        height: 45px;
+        border-radius: 50%;
+        background-color: rgba(230, 57, 70, 0.1);
+        color: var(--primary-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        flex-shrink: 0;
+    }
+    
+    .activity-date {
+        color: var(--medium-gray);
+        font-size: 0.875rem;
+    }
+    
+    .form-section {
+        margin-bottom: 2rem;
+    }
+    
+    .form-section:last-child {
+        margin-bottom: 0;
+    }
+</style>
 {% endblock %}
 
-{% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% block content %}
+<section class="profile-section">
+    <div class="container">
+        <div class="profile-header animated-element">
+            <div class="row">
+                <div class="col-md-4 col-lg-3 text-center text-md-start">
+                    <div class="avatar-container">
+                        <img src="https://ui-avatars.com/api/?name=User&background=e63946&color=fff&size=150" alt="User Avatar" class="profile-avatar">
+                        <div class="avatar-upload">
+                            <input type="file" id="avatar-upload" accept="image/*">
+                            <label for="avatar-upload" class="avatar-edit-btn">
+                                <i class="bi bi-pencil"></i>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-8 col-lg-9">
+                    <div class="d-md-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <h2 class="mb-1" id="profile-username">Имя пользователя</h2>
+                            <p class="text-muted mb-0" id="profile-email">email@example.com</p>
+                        </div>
+                        <div class="mt-3 mt-md-0">
+                            <button class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-gear"></i> Настройки
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row mt-4">
+                        <div class="col-md-4 mb-3 mb-md-0">
+                            <div class="card h-100">
+                                <div class="card-body text-center">
+                                    <h3 class="fs-4 text-danger">0</h3>
+                                    <p class="text-muted mb-0">Активных тендеров</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3 mb-md-0">
+                            <div class="card h-100">
+                                <div class="card-body text-center">
+                                    <h3 class="fs-4 text-danger">0</h3>
+                                    <p class="text-muted mb-0">Заявок</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body text-center">
+                                    <h3 class="fs-4 text-danger">0</h3>
+                                    <p class="text-muted mb-0">Документов</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <ul class="nav nav-pills profile-tabs animated-element mb-4" id="profileTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="profile-tab" data-bs-toggle="tab" data-bs-target="#profile" type="button" role="tab">Профиль</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="edit-tab" data-bs-toggle="tab" data-bs-target="#edit" type="button" role="tab">Редактировать</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="activity-tab" data-bs-toggle="tab" data-bs-target="#activity" type="button" role="tab">Активность</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="security-tab" data-bs-toggle="tab" data-bs-target="#security" type="button" role="tab">Безопасность</button>
+            </li>
+        </ul>
+        
+        <div class="tab-content animated-element" id="profileTabsContent">
+            <!-- Вкладка профиля -->
+            <div class="tab-pane fade show active" id="profile" role="tabpanel" aria-labelledby="profile-tab">
+                <div class="row">
+                    <div class="col-lg-8">
+                        <div class="card mb-4">
+                            <div class="card-body">
+                                <h5 class="card-title">Информация о пользователе</h5>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <tbody>
+                                            <tr>
+                                                <th style="width: 30%;">Имя пользователя</th>
+                                                <td id="info-username">Загрузка...</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Email</th>
+                                                <td id="info-email">Загрузка...</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Дата регистрации</th>
+                                                <td id="info-created-at">Загрузка...</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Статус</th>
+                                                <td><span class="badge bg-success">Активен</span></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Статистика использования</h5>
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <tbody>
+                                            <tr>
+                                                <th style="width: 30%;">Запросов к AI-чату</th>
+                                                <td>0</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Созданных документов</th>
+                                                <td>0</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Активных тендеров</th>
+                                                <td>0</td>
+                                            </tr>
+                                            <tr>
+                                                <th>Последний вход</th>
+                                                <td>Сегодня</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-lg-4 mt-4 mt-lg-0">
+                        <div class="card mb-4">
+                            <div class="card-body">
+                                <h5 class="card-title">Последние чаты</h5>
+                                <div class="list-group list-group-flush" id="recent-chats">
+                                    <a href="#" class="list-group-item list-group-item-action d-flex align-items-center">
+                                        <span class="me-3"><i class="bi bi-chat-dots text-primary"></i></span>
+                                        <div>
+                                            <p class="mb-1">Нет доступных чатов</p>
+                                            <small class="text-muted">Начните новый чат</small>
+                                        </div>
+                                    </a>
+                                </div>
+                                <div class="mt-3 text-center">
+                                    <a href="/chat" class="btn btn-sm btn-outline-primary">Перейти в чат</a>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Недавние документы</h5>
+                                <div class="list-group list-group-flush">
+                                    <a href="#" class="list-group-item list-group-item-action d-flex align-items-center">
+                                        <span class="me-3"><i class="bi bi-file-earmark-text text-primary"></i></span>
+                                        <div>
+                                            <p class="mb-1">Нет доступных документов</p>
+                                            <small class="text-muted">Загрузите новый документ</small>
+                                        </div>
+                                    </a>
+                                </div>
+                                <div class="mt-3 text-center">
+                                    <a href="/knowledge" class="btn btn-sm btn-outline-primary">Перейти в базу знаний</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Вкладка редактирования профиля -->
+            <div class="tab-pane fade" id="edit" role="tabpanel" aria-labelledby="edit-tab">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-4">Редактирование профиля</h5>
+                        <form id="profile-edit-form">
+                            <div class="form-section">
+                                <h6 class="mb-3">Основная информация</h6>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="edit-username" class="form-label">Имя пользователя</label>
+                                        <input type="text" class="form-control" id="edit-username" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="edit-email" class="form-label">Email</label>
+                                        <input type="email" class="form-control" id="edit-email" required>
+                                    </div>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="edit-first-name" class="form-label">Имя</label>
+                                        <input type="text" class="form-control" id="edit-first-name">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="edit-last-name" class="form-label">Фамилия</label>
+                                        <input type="text" class="form-control" id="edit-last-name">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-section">
+                                <h6 class="mb-3">Контактная информация</h6>
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="edit-phone" class="form-label">Телефон</label>
+                                        <input type="tel" class="form-control" id="edit-phone">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="edit-company" class="form-label">Компания</label>
+                                        <input type="text" class="form-control" id="edit-company">
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-address" class="form-label">Адрес</label>
+                                    <textarea class="form-control" id="edit-address" rows="2"></textarea>
+                                </div>
+                            </div>
+                            
+                            <div class="form-section">
+                                <h6 class="mb-3">Дополнительная информация</h6>
+                                <div class="mb-3">
+                                    <label for="edit-bio" class="form-label">О себе</label>
+                                    <textarea class="form-control" id="edit-bio" rows="3"></textarea>
+                                </div>
+                            </div>
+                            
+                            <div class="d-flex justify-content-end">
+                                <button type="button" class="btn btn-outline-secondary me-2">Отмена</button>
+                                <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Вкладка активности -->
+            <div class="tab-pane fade" id="activity" role="tabpanel" aria-labelledby="activity-tab">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-4">Последняя активность</h5>
+                        <div class="activity-list">
+                            <div class="activity-item">
+                                <div class="activity-icon">
+                                    <i class="bi bi-person-check-fill"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-1">Регистрация аккаунта</h6>
+                                    <p class="mb-1">Вы успешно зарегистрировали аккаунт на платформе TenderHack.</p>
+                                    <div class="activity-date">Сегодня</div>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-icon">
+                                    <i class="bi bi-box-arrow-in-right"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-1">Вход в систему</h6>
+                                    <p class="mb-1">Вы успешно вошли в систему.</p>
+                                    <div class="activity-date">Сегодня</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Вкладка безопасности -->
+            <div class="tab-pane fade" id="security" role="tabpanel" aria-labelledby="security-tab">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title mb-4">Изменение пароля</h5>
+                        <form id="password-change-form">
+                            <div class="mb-3">
+                                <label for="current-password" class="form-label">Текущий пароль</label>
+                                <input type="password" class="form-control" id="current-password" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="new-password" class="form-label">Новый пароль</label>
+                                <input type="password" class="form-control" id="new-password" required>
+                                <div class="password-strength mt-2">
+                                    <div class="password-strength-meter"></div>
+                                </div>
+                                <div class="password-strength-text text-end mt-1"></div>
+                            </div>
+                            <div class="mb-4">
+                                <label for="confirm-new-password" class="form-label">Подтверждение нового пароля</label>
+                                <input type="password" class="form-control" id="confirm-new-password" required>
+                            </div>
+                            <div class="d-flex justify-content-end">
+                                <button type="button" class="btn btn-outline-secondary me-2">Отмена</button>
+                                <button type="submit" class="btn btn-primary">Изменить пароль</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <h5 class="card-title mb-4">Настройки безопасности</h5>
+                        <div class="mb-3 d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">Двухфакторная аутентификация</h6>
+                                <p class="text-muted mb-0">Повысьте безопасность своего аккаунта с помощью 2FA</p>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="twoFactorToggle">
+                            </div>
+                        </div>
+                        <div class="mb-3 d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">Уведомления о входе</h6>
+                                <p class="text-muted mb-0">Получайте уведомления о необычной активности в аккаунте</p>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="loginNotificationsToggle" checked>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">Активные сессии</h6>
+                                <p class="text-muted mb-0">Управляйте устройствами, на которых вы вошли в систему</p>
+                            </div>
+                            <button class="btn btn-sm btn-outline-primary">Управление</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const ctx = document.getElementById('statisticsChart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн'],
-                datasets: [{
-                    label: 'Участие в тендерах',
-                    data: [12, 19, 15, 17, 14, 23],
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                }, {
-                    label: 'Выигранные тендеры',
-                    data: [5, 7, 4, 9, 6, 12],
-                    backgroundColor: 'rgba(75, 192, 92, 0.2)',
-                    borderColor: 'rgba(75, 192, 92, 1)',
-                    borderWidth: 1
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: true
+        console.log('Страница профиля загружена');
+        
+        // Проверка статуса авторизации
+        const hasAuthToken = !!localStorage.getItem('authToken');
+        console.log('Токен авторизации в localStorage:', hasAuthToken ? 'Присутствует' : 'Отсутствует');
+        console.log('Токен:', localStorage.getItem('authToken'));
+        
+        // Проверка данных пользователя из API
+        console.log('API данные:', api ? 'API существует' : 'API не существует');
+        if (api) {
+            console.log('Статус авторизации в API:', api.isAuthenticated() ? 'Авторизован' : 'Не авторизован');
+            console.log('Токен в API:', api.token);
+            
+            // Попытка получить данные пользователя
+            api.getUser()
+                .then(user => {
+                    console.log('Данные пользователя получены:', user);
+                    // Обновляем информацию на странице
+                    if (user) {
+                        document.getElementById('profile-username').textContent = user.username;
+                        document.getElementById('profile-email').textContent = user.email;
+                        document.getElementById('info-username').textContent = user.username;
+                        document.getElementById('info-email').textContent = user.email;
+                        document.getElementById('info-created-at').textContent = formatDate(user.created_at);
+                        
+                        // Заполнение формы редактирования
+                        document.getElementById('edit-username').value = user.username;
+                        document.getElementById('edit-email').value = user.email;
+                        
+                        // Установка аватара
+                        const avatarImg = document.querySelector('.profile-avatar');
+                        avatarImg.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=e63946&color=fff&size=150`;
                     }
-                }
+                })
+                .catch(error => {
+                    console.error('Ошибка при получении данных пользователя:', error);
+                });
+        }
+        
+        // Обработка изменения пароля
+        const passwordChangeForm = document.getElementById('password-change-form');
+        if (passwordChangeForm) {
+            const newPasswordInput = document.getElementById('new-password');
+            const confirmNewPasswordInput = document.getElementById('confirm-new-password');
+            const passwordStrengthMeter = document.querySelector('.password-strength-meter');
+            const passwordStrengthText = document.querySelector('.password-strength-text');
+            
+            // Проверка силы пароля
+            function checkPasswordStrength(password) {
+                let strength = 0;
+                
+                if (password.length >= 6) strength += 1;
+                if (password.length >= 10) strength += 1;
+                if (/[A-Z]/.test(password)) strength += 1;
+                if (/[0-9]/.test(password)) strength += 1;
+                if (/[^A-Za-z0-9]/.test(password)) strength += 1;
+                
+                return strength;
             }
-        });
+            
+            // Обновление индикатора силы пароля
+            function updatePasswordStrength() {
+                const password = newPasswordInput.value;
+                const strength = checkPasswordStrength(password);
+                const percentage = (strength / 5) * 100;
+                let color, text;
+                
+                switch (strength) {
+                    case 0:
+                        color = '#e63946';
+                        text = 'Очень слабый';
+                        break;
+                    case 1:
+                        color = '#e63946';
+                        text = 'Слабый';
+                        break;
+                    case 2:
+                        color = '#ee9b00';
+                        text = 'Средний';
+                        break;
+                    case 3:
+                        color = '#2a9d8f';
+                        text = 'Хороший';
+                        break;
+                    case 4:
+                        color = '#2a9d8f';
+                        text = 'Сильный';
+                        break;
+                    case 5:
+                        color = '#2a9d8f';
+                        text = 'Очень сильный';
+                        break;
+                    default:
+                        color = '#e63946';
+                        text = '';
+                }
+                
+                passwordStrengthMeter.style.width = `${percentage}%`;
+                passwordStrengthMeter.style.backgroundColor = color;
+                passwordStrengthText.textContent = text;
+                passwordStrengthText.style.color = color;
+            }
+            
+            newPasswordInput.addEventListener('input', updatePasswordStrength);
+            
+            // Обработка отправки формы
+            passwordChangeForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const currentPassword = document.getElementById('current-password').value;
+                const newPassword = newPasswordInput.value;
+                const confirmNewPassword = confirmNewPasswordInput.value;
+                
+                // Проверка совпадения паролей
+                if (newPassword !== confirmNewPassword) {
+                    showToast('Новый пароль и подтверждение не совпадают', 'error');
+                    return;
+                }
+                
+                // Проверка силы пароля
+                const strength = checkPasswordStrength(newPassword);
+                if (strength < 3) {
+                    showToast('Пароль слишком слабый. Используйте комбинацию букв, цифр и специальных символов.', 'error');
+                    return;
+                }
+                
+                // Здесь будет запрос к API для изменения пароля
+                showToast('Функциональность изменения пароля в разработке', 'info');
+            });
+        }
+        
+        // Обработка формы редактирования профиля
+        const profileEditForm = document.getElementById('profile-edit-form');
+        if (profileEditForm) {
+            profileEditForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Здесь будет запрос к API для обновления профиля
+                showToast('Функциональность редактирования профиля в разработке', 'info');
+            });
+        }
+        
+        // Обработка загрузки аватара
+        const avatarUpload = document.getElementById('avatar-upload');
+        if (avatarUpload) {
+            avatarUpload.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        document.querySelector('.profile-avatar').src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                    
+                    // Здесь будет запрос к API для загрузки аватара
+                    showToast('Функциональность загрузки аватара в разработке', 'info');
+                }
+            });
+        }
+        
+        // Анимация элементов
+        if (typeof gsap !== 'undefined') {
+            gsap.from('.profile-header', {
+                opacity: 0,
+                y: 30,
+                duration: 0.6,
+                delay: 0.2
+            });
+            
+            gsap.from('.profile-tabs', {
+                opacity: 0,
+                y: 20,
+                duration: 0.5,
+                delay: 0.4
+            });
+            
+            gsap.from('.tab-content', {
+                opacity: 0,
+                y: 20,
+                duration: 0.5,
+                delay: 0.6
+            });
+        }
     });
 </script>
 {% endblock %} 

@@ -1,9 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query, Body, BackgroundTasks, Request
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query, Body, BackgroundTasks, Request, Cookie, Security
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
 from sqlalchemy import func
@@ -13,57 +13,215 @@ from datetime import timedelta, datetime
 import os
 import shutil
 from uuid import uuid4
-import jwt
-from jose import JWTError
+from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import validate_arguments
+import pandas as pd
+import logging
 
 from database import get_db, init_db
 import models
 import schemas
-from auth import authenticate_user, create_access_token, get_current_active_user, ACCESS_TOKEN_EXPIRE_MINUTES, get_password_hash
+from auth import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, get_password_hash, SECRET_KEY, ALGORITHM, get_current_active_user
 from load_parquet_to_data import load_parquet_to_data
 
 app = FastAPI(title="TenderHack API", version="1.0.0")
 
-# Монтируем статические файлы
-app.mount("/static", StaticFiles(directory="Backend/static"), name="static")
-
-# Настраиваем шаблоны
-templates = Jinja2Templates(directory="Backend/templates")
-
-# Добавляем middleware для CORS
+# Настройка CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*", "http://localhost:7777", "http://localhost:8000"],  # В продакшене лучше указать конкретные домены
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Главная страница
-@app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+# Определяем абсолютные пути для статических файлов и шаблонов
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 
-# Страница входа
+# Создаем директории, если они не существуют
+os.makedirs(STATIC_DIR, exist_ok=True)
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+# Настройка статических файлов и шаблонов
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+# Настройка OAuth2
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# Настройка JWT
+SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
+
+# Настройка логгера
+logger = logging.getLogger("app")
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(handler)
+
+# Функция для проверки роли пользователя
+def check_user_role(required_roles: List[str]):
+    """
+    Создает зависимость для проверки роли пользователя
+    """
+    async def role_checker(current_user: models.User = Depends(get_current_active_user)):
+        if current_user.role not in required_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="У вас недостаточно прав для выполнения этой операции"
+            )
+        return current_user
+    return role_checker
+
+# Зависимости для различных ролей
+get_admin_user = check_user_role(["admin"])
+get_operator_user = check_user_role(["admin", "operator"])
+
+# Зависимость для получения текущего активного пользователя с ролью оператора или администратора
+async def get_operator_user(
+    current_user: models.User = Depends(get_current_active_user),
+) -> models.User:
+    if current_user.role not in ["operator", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Для этого действия требуются права оператора или администратора",
+        )
+    return current_user
+
+# Зависимость для получения текущего активного пользователя с ролью администратора
+async def get_admin_user(
+    current_user: models.User = Depends(get_current_active_user),
+) -> models.User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Для этого действия требуются права администратора",
+        )
+    return current_user
+
+# Маршруты для веб-страниц
+@app.get("/", response_class=HTMLResponse)
+async def read_root(request: Request, db: Session = Depends(get_db)):
+    """
+    Главная страница - доступна для всех, но авторизованные пользователи видят свои данные
+    """
+    try:
+        # Пробуем получить пользователя из cookie
+        user = await get_api_user(request, None, db)
+        # Если пользователь найден, показываем главную с информацией о пользователе
+        return templates.TemplateResponse("index.html", {"request": request, "user": user})
+    except:
+        # Для неавторизованных пользователей показываем обычную главную страницу
+        return templates.TemplateResponse("index.html", {"request": request})
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
-# Страница регистрации
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
-# Страница профиля
+# Получение текущего активного пользователя для API запросов
+# Это позволяет более гибко получать пользователя как из header, так и из cookie
+async def get_api_user(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение пользователя для API запросов, поддерживает как Bearer токен, так и cookie
+    """
+    # Если есть токен в заголовке Authorization, используем его
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username = payload.get("sub")
+            if username:
+                user = db.query(models.User).filter(models.User.username == username).first()
+                if user and user.is_active:
+                    return user
+        except Exception as e:
+            print(f"Ошибка декодирования токена из заголовка: {e}")
+    
+    # Если токен в заголовке не валиден или отсутствует, проверяем cookie
+    try:
+        cookie_token = request.cookies.get("token")
+        if cookie_token:
+            payload = jwt.decode(cookie_token, SECRET_KEY, algorithms=[ALGORITHM])
+            username = payload.get("sub")
+            if username:
+                user = db.query(models.User).filter(models.User.username == username).first()
+                if user and user.is_active:
+                    return user
+    except Exception as e:
+        print(f"Ошибка декодирования токена из cookie: {e}")
+    
+    # Если не нашли пользователя ни по заголовку, ни по cookie
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Необходима авторизация",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
 @app.get("/profile", response_class=HTMLResponse)
-async def profile_page(request: Request):
-    return templates.TemplateResponse("profile.html", {"request": request})
+async def profile_page(request: Request, db: Session = Depends(get_db)):
+    """
+    Страница профиля пользователя
+    """
+    try:
+        # Пробуем получить пользователя из cookie
+        user = await get_api_user(request, None, db)
+        
+        # Если пользователь найден, показываем страницу профиля
+        return templates.TemplateResponse("profile.html", {"request": request, "user": user})
+    except:
+        # Если пользователь не найден, перенаправляем на страницу входа
+        return RedirectResponse(url="/login")
 
 @app.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request):
-    return templates.TemplateResponse("chat.html", {"request": request})
+async def chat_page(request: Request, db: Session = Depends(get_db)):
+    """
+    Страница AI-чата
+    """
+    try:
+        # Пробуем получить пользователя из cookie
+        user = await get_api_user(request, None, db)
+        
+        # Если пользователь найден, показываем страницу чата
+        return templates.TemplateResponse("chat.html", {"request": request, "user": user})
+    except:
+        # Если пользователь не найден, перенаправляем на страницу входа
+        return RedirectResponse(url="/login")
+
+@app.get("/knowledge", response_class=HTMLResponse)
+async def knowledge_page(request: Request, db: Session = Depends(get_db)):
+    """
+    Страница базы знаний - доступна для всех, но авторизованные пользователи видят свои данные
+    """
+    try:
+        # Пробуем получить пользователя из cookie
+        user = await get_api_user(request, None, db)
+        # Если пользователь найден, показываем страницу с информацией о пользователе
+        return templates.TemplateResponse("knowledge.html", {"request": request, "user": user})
+    except:
+        # Для неавторизованных пользователей показываем обычную страницу
+        return templates.TemplateResponse("knowledge.html", {"request": request})
+
+@app.get("/logout")
+async def logout():
+    """
+    Маршрут для выхода из системы
+    """
+    response = RedirectResponse(url="/login")
+    response.delete_cookie(key="token")
+    return response
 
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -87,7 +245,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 @app.post("/api/login", response_model=schemas.LoginResponse)
 async def login(login_data: schemas.LoginRequest, db: Session = Depends(get_db)):
     """
-    Эндпоинт для входа пользователя через JSON
+    Эндпоинт для входа пользователя через JSON API
     """
     user = authenticate_user(db, login_data.username, login_data.password)
     if not user:
@@ -95,17 +253,37 @@ async def login(login_data: schemas.LoginRequest, db: Session = Depends(get_db))
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверное имя пользователя или пароль"
         )
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    return {
+    
+    # Создаем JSON-ответ с cookie
+    response_data = {
         "access_token": access_token,
         "token_type": "bearer",
         "user_id": user.id,
         "username": user.username,
-        "email": user.email
+        "email": user.email,
+        "role": user.role
     }
+    
+    # Создаем response объект
+    response = JSONResponse(content=response_data)
+    
+    # Устанавливаем cookie с токеном
+    expires = datetime.utcnow() + access_token_expires
+    response.set_cookie(
+        key="token",
+        value=access_token,
+        httponly=True,
+        secure=False,  # В продакшн сделать True
+        samesite="lax",
+        expires=expires.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    )
+    
+    return response
 
 
 @app.post("/api/register", response_model=schemas.User)
@@ -465,19 +643,53 @@ async def get_tender_documents(tender_id: int, db: Session = Depends(get_db)):
 @app.on_event("startup")
 async def startup_event():
     """
-    Инициализация базы данных при запуске приложения
+    Инициализация базы данных и создание тестовых данных при запуске
     """
     init_db()
     
-    # Создаем директорию для загрузки файлов
-    os.makedirs("uploads/tenders", exist_ok=True)
+    # Проверяем наличие директории для загрузок
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    
+    try:
+        # Создаем тестового пользователя, если он не существует
+        db = next(get_db())
+        
+        admin_user = db.query(models.User).filter(models.User.username == "admin").first()
+        if not admin_user:
+            hashed_password = get_password_hash("admin123")
+            admin_user = models.User(
+                username="admin",
+                email="admin@example.com",
+                hashed_password=hashed_password,
+                is_active=True
+            )
+            db.add(admin_user)
+            db.commit()
+            db.refresh(admin_user)
+            print("Created admin user")
+        
+        # Создаем категории, если они не существуют
+        categories = ["Строительство", "IT", "Консалтинг", "Поставка", "Услуги"]
+        for category_name in categories:
+            category = db.query(models.Category).filter(models.Category.name == category_name).first()
+            if not category:
+                category = models.Category(name=category_name)
+                db.add(category)
+        
+        db.commit()
+        print("Initialized categories")
+    except Exception as e:
+        print(f"Error during startup: {e}")
+    finally:
+        db.close()
 
 
 # Эндпоинты для работы с историей чатов
 @app.post("/api/chat-history", response_model=schemas.ChatHistory)
 async def create_chat_message(
+    request: Request,
     chat_message: schemas.ChatHistoryCreate,
-    current_user: models.User = Depends(get_current_active_user),
+    current_user: models.User = Depends(get_api_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -490,39 +702,73 @@ async def create_chat_message(
             detail="Вы можете добавлять сообщения только для своего пользователя"
         )
     
-    # Создаем новую запись в истории чата
-    new_message = models.ChatHistory(**chat_message.dict())
-    db.add(new_message)
-    db.commit()
-    db.refresh(new_message)
-    
-    return new_message
-
+    try:
+        logger.info(f"Создание сообщения в чате {chat_message.chat_id} от пользователя {current_user.id}")
+        # Создаем новую запись в истории чата
+        new_message = models.ChatHistory(**chat_message.dict())
+        db.add(new_message)
+        db.commit()
+        db.refresh(new_message)
+        
+        logger.info(f"Сообщение успешно создано: {new_message.id}")
+        return new_message
+    except Exception as e:
+        logger.error(f"Ошибка при создании сообщения: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при создании сообщения: {str(e)}"
+        )
 
 @app.get("/api/chat-history/{chat_id}", response_model=schemas.ChatConversation)
 async def get_chat_conversation(
+    request: Request,
     chat_id: str,
-    current_user: models.User = Depends(get_current_active_user),
+    current_user: models.User = Depends(get_api_user),
     db: Session = Depends(get_db)
 ):
     """
     Получение истории сообщений для конкретного чата
     """
-    # Проверяем, что пользователь имеет доступ к этому чату
-    messages = db.query(models.ChatHistory).filter(
-        models.ChatHistory.chat_id == chat_id,
-        models.ChatHistory.user_id == current_user.id
-    ).order_by(models.ChatHistory.timestamp).all()
-    
-    return schemas.ChatConversation(
-        chat_id=chat_id,
-        messages=messages
-    )
-
+    try:
+        logger.info(f"Получение истории чата {chat_id} для пользователя {current_user.id}")
+        # Проверяем, что пользователь имеет доступ к этому чату
+        messages = db.query(models.ChatHistory).filter(
+            models.ChatHistory.chat_id == chat_id,
+            models.ChatHistory.user_id == current_user.id
+        ).order_by(models.ChatHistory.timestamp).all()
+        
+        logger.info(f"Найдено {len(messages)} сообщений в чате {chat_id}")
+        
+        # Сначала создаем словарь для конвертации в Pydantic модель
+        chat_data = {
+            "chat_id": chat_id,
+            "messages": [
+                {
+                    "id": msg.id,
+                    "user_id": msg.user_id,
+                    "chat_id": msg.chat_id,
+                    "message": msg.message,
+                    "is_bot": msg.is_bot,
+                    "timestamp": msg.timestamp,
+                    "message_metadata": msg.message_metadata
+                } for msg in messages
+            ]
+        }
+        
+        # Затем создаем Pydantic модель из словаря
+        return schemas.ChatConversation(**chat_data)
+    except Exception as e:
+        logger.error(f"Ошибка при получении истории чата: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при получении истории чата: {str(e)}"
+        )
 
 @app.get("/api/chat-history", response_model=List[str])
 async def get_user_chats(
-    current_user: models.User = Depends(get_current_active_user),
+    request: Request,
+    current_user: models.User = Depends(get_api_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -538,8 +784,9 @@ async def get_user_chats(
 
 @app.delete("/api/chat-history/{chat_id}", response_model=Dict[str, Any])
 async def delete_chat_history(
+    request: Request,
     chat_id: str,
-    current_user: models.User = Depends(get_current_active_user),
+    current_user: models.User = Depends(get_api_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -562,9 +809,10 @@ async def delete_chat_history(
 
 @app.patch("/api/chat-history/{message_id}", response_model=schemas.ChatHistory)
 async def update_chat_message(
+    request: Request,
     message_id: int,
     message_update: schemas.ChatHistoryUpdate,
-    current_user: models.User = Depends(get_current_active_user),
+    current_user: models.User = Depends(get_api_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -597,44 +845,31 @@ async def update_chat_message(
 
 
 @app.post("/api/chat-history/{chat_id}/finish", response_model=Dict[str, Any])
-async def finish_chat(
-    chat_id: str,
-    chat_rating: schemas.ChatRatingCreate,
-    current_user: models.User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Завершает чат и сохраняет оценку чата
-    """
-    # Проверяем, существует ли чат
-    chat_messages = db.query(models.ChatHistory).filter(
-        models.ChatHistory.chat_id == chat_id,
-        models.ChatHistory.user_id == current_user.id
-    ).all()
-    
-    if not chat_messages:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Чат не найден"
-        )
-    
-    # Создаем запись оценки чата
-    chat_rating_db = models.ChatRating(
-        chat_id=chat_id,
-        user_id=current_user.id,
-        rating=chat_rating.rating,
-        comment=chat_rating.comment
-    )
-    
-    db.add(chat_rating_db)
-    db.commit()
-    
-    return {
-        "status": "success",
-        "message": "Чат успешно завершен и оценка сохранена",
-        "chat_id": chat_id,
-        "rating": chat_rating.rating
-    }
+async def finish_chat(chat_id: str, rating_data: dict, current_user: models.User = Depends(get_api_user), db: Session = Depends(get_db)):
+    try:
+        # Проверяем существование чата
+        chat_history = db.query(models.ChatHistory).filter(
+            models.ChatHistory.chat_id == chat_id,
+            models.ChatHistory.user_id == current_user.id
+        ).first()
+        
+        if not chat_history:
+            # Если чат не найден, создаем запись о завершении
+            logger.warning(f"Попытка завершить несуществующий чат {chat_id} пользователем {current_user.id}")
+            return {"success": True, "message": "Чат успешно завершен (новая запись)"}
+        
+        # Обновляем статус чата и добавляем оценку
+        chat_history.is_completed = True
+        chat_history.rating = rating_data.get("rating", 0)
+        chat_history.feedback = rating_data.get("comment", "")
+        
+        db.commit()
+        
+        return {"success": True, "message": "Чат успешно завершен"}
+    except Exception as e:
+        logger.error(f"Ошибка при завершении чата {chat_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ошибка при завершении чата: {str(e)}")
 
 
 # Эндпоинты для работы с моделью Data
@@ -757,7 +992,6 @@ async def import_parquet(
     """
     Импорт данных из parquet-файла в таблицу Data
     """
-    # Функция для выполнения импорта в фоновом режиме
     def run_import():
         try:
             result = load_parquet_to_data(
@@ -784,6 +1018,246 @@ async def import_parquet(
         }
     }
 
+
+@app.post("/api/call-operator")
+async def call_operator(
+    request: Request,
+    data: Dict[str, Any],
+    current_user: models.User = Depends(get_api_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Обработка запроса на соединение с оператором
+    """
+    try:
+        chat_id = data.get("chat_id")
+        if not chat_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Не указан ID чата"
+            )
+        
+        logger.info(f"Получен запрос на соединение с оператором от пользователя {current_user.id} для чата {chat_id}")
+        
+        # Здесь будет логика обработки запроса:
+        # 1. Проверка доступности операторов
+        # 2. Назначение оператора в чат
+        # 3. Уведомление оператора и т.д.
+        
+        # Пока что просто имитируем обработку запроса
+        
+        # Добавляем системное сообщение в чат
+        system_message = models.ChatHistory(
+            user_id=current_user.id,
+            chat_id=chat_id,
+            message="Запрос на соединение с оператором зарегистрирован. Ожидайте ответа.",
+            is_bot=True,
+            message_metadata={"type": "system", "operator_request": True}
+        )
+        
+        db.add(system_message)
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Запрос на соединение с оператором принят",
+            "estimated_wait_time": "5-10 минут"
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка при обработке запроса на вызов оператора: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка при обработке запроса: {str(e)}"
+        )
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(
+    request: Request,
+    user: models.User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Административная панель (только для администраторов)
+    """
+    # Получаем статистику для отображения на панели
+    user_count = db.query(func.count(models.User.id)).scalar() or 0
+    tender_count = db.query(func.count(models.Tender.id)).scalar() or 0
+    operator_count = db.query(func.count(models.User.id)).filter(models.User.role == "operator").scalar() or 0
+    
+    # Получаем количество активных заявок на поддержку
+    support_request_count = db.query(func.count(models.ChatHistory.id))\
+        .filter(models.ChatHistory.message_metadata.op('->')('operator_request').cast(Boolean) == True)\
+        .filter(models.ChatHistory.message_metadata.op('->')('resolved').cast(Boolean) != True)\
+        .scalar() or 0
+    
+    # Получаем недавно зарегистрированных пользователей
+    recent_users = db.query(models.User)\
+        .order_by(models.User.created_at.desc())\
+        .limit(10)\
+        .all()
+    
+    return templates.TemplateResponse(
+        "admin.html",
+        {
+            "request": request,
+            "user": user,
+            "user_count": user_count,
+            "tender_count": tender_count,
+            "operator_count": operator_count,
+            "support_request_count": support_request_count,
+            "recent_users": recent_users
+        }
+    )
+
+@app.get("/support-requests", response_class=HTMLResponse)
+async def support_requests_page(
+    request: Request,
+    user: models.User = Depends(get_operator_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Страница заявок на поддержку (для операторов и администраторов)
+    """
+    return templates.TemplateResponse(
+        "support_requests.html",
+        {
+            "request": request,
+            "user": user
+        }
+    )
+
+@app.post("/api/users/{user_id}/role", response_model=schemas.User)
+async def update_user_role(
+    user_id: int,
+    role: str = Body(..., embed=True),
+    current_user: models.User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Изменение роли пользователя (только для администраторов)
+    """
+    # Проверяем, что роль указана корректно
+    if role not in ["user", "operator", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Указана неверная роль. Допустимые роли: user, operator, admin"
+        )
+    
+    # Получаем пользователя, которому меняем роль
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+    
+    # Запрещаем администратору понижать собственную роль
+    if user.id == current_user.id and role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Администратор не может понизить свою роль"
+        )
+    
+    # Обновляем роль пользователя
+    user.role = role
+    db.commit()
+    db.refresh(user)
+    
+    return user
+
+
+@app.get("/api/support-requests", response_model=List[Dict[str, Any]])
+async def get_support_requests(
+    current_user: models.User = Depends(get_operator_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка заявок на поддержку (для операторов и администраторов)
+    """
+    # Получаем все активные заявки на поддержку
+    active_requests = db.query(models.ChatHistory)\
+        .filter(models.ChatHistory.message_metadata.op('->')('operator_request').cast(Boolean) == True)\
+        .filter(models.ChatHistory.message_metadata.op('->')('resolved').cast(Boolean) != True)\
+        .order_by(models.ChatHistory.timestamp.desc())\
+        .all()
+    
+    # Группируем заявки по чатам
+    grouped_requests = {}
+    for request_item in active_requests:
+        if request_item.chat_id not in grouped_requests:
+            # Получаем имя пользователя
+            request_user = db.query(models.User).filter(models.User.id == request_item.user_id).first()
+            username = request_user.username if request_user else "Неизвестный пользователь"
+            
+            # Получаем количество сообщений в чате
+            message_count = db.query(func.count(models.ChatHistory.id))\
+                .filter(models.ChatHistory.chat_id == request_item.chat_id)\
+                .scalar() or 0
+            
+            grouped_requests[request_item.chat_id] = {
+                "chat_id": request_item.chat_id,
+                "user_id": request_item.user_id,
+                "username": username,
+                "timestamp": request_item.timestamp.isoformat(),
+                "message_count": message_count,
+                "status": "новая"
+            }
+    
+    return list(grouped_requests.values())
+
+
+@app.post("/api/support-requests/{chat_id}/resolve")
+async def resolve_support_request(
+    chat_id: str,
+    current_user: models.User = Depends(get_operator_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Отметить заявку на поддержку как решенную
+    """
+    # Находим все сообщения с запросом оператора в этом чате
+    operator_requests = db.query(models.ChatHistory)\
+        .filter(models.ChatHistory.chat_id == chat_id)\
+        .filter(models.ChatHistory.message_metadata.op('->')('operator_request').cast(Boolean) == True)\
+        .all()
+    
+    if not operator_requests:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка не найдена"
+        )
+    
+    # Обновляем статус всех запросов в чате
+    for request_item in operator_requests:
+        if request_item.message_metadata is None:
+            request_item.message_metadata = {}
+        
+        metadata = request_item.message_metadata
+        metadata["resolved"] = True
+        metadata["resolved_by"] = current_user.id
+        metadata["resolved_at"] = datetime.utcnow().isoformat()
+        
+        request_item.message_metadata = metadata
+    
+    # Добавляем системное сообщение о решении
+    system_message = models.ChatHistory(
+        user_id=request_item.user_id,  # Используем ID пользователя из запроса
+        chat_id=chat_id,
+        message=f"Заявка решена оператором {current_user.username}.",
+        is_bot=True,
+        message_metadata={
+            "type": "system",
+            "operator_id": current_user.id,
+            "operator_username": current_user.username
+        }
+    )
+    
+    db.add(system_message)
+    db.commit()
+    
+    return {"success": True, "message": "Заявка успешно отмечена как решенная"}
 
 if __name__ == '__main__':
     uvicorn.run(

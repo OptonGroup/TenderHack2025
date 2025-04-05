@@ -15,7 +15,9 @@ class User(Base):
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True)
+    role = Column(String(20), default="user")  # Возможные значения: "user", "operator", "admin"
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     
     tenders = relationship("Tender", back_populates="creator", cascade="all, delete-orphan")
     bids = relationship("Bid", back_populates="bidder", cascade="all, delete-orphan")

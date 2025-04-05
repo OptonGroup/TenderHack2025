@@ -1,0 +1,291 @@
+{% extends "layout.html" %}
+
+{% block title %}Заявки на помощь{% endblock %}
+
+{% block styles %}
+<style>
+    .request-card {
+        transition: all 0.3s ease;
+    }
+    
+    .request-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    }
+    
+    .badge-new {
+        background-color: #ff5722;
+        color: white;
+    }
+    
+    .request-timestamp {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: #6c757d;
+    }
+    
+    .empty-state i {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.3;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <h2 class="mb-4">
+        <i class="fas fa-headset me-2"></i>
+        Заявки на помощь
+    </h2>
+    
+    <div class="mb-4">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Здесь вы можете видеть все активные заявки на помощь от пользователей.
+            Чтобы помочь пользователю, перейдите в его чат и отправьте сообщение.
+        </div>
+    </div>
+    
+    <div class="row" id="requestsContainer">
+        <!-- Здесь будут отображаться заявки -->
+        <div class="col-12 empty-state" id="emptyState">
+            <i class="fas fa-inbox"></i>
+            <h4>Нет активных заявок</h4>
+            <p>В данный момент нет активных заявок на помощь от пользователей.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для просмотра деталей заявки -->
+<div class="modal fade" id="requestDetailsModal" tabindex="-1" aria-labelledby="requestDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="requestDetailsModalLabel">Детали заявки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <strong>Пользователь:</strong>
+                    <span id="modalUsername"></span>
+                </div>
+                <div class="mb-3">
+                    <strong>Дата создания:</strong>
+                    <span id="modalTimestamp"></span>
+                </div>
+                <div class="mb-3">
+                    <strong>Количество сообщений:</strong>
+                    <span id="modalMessageCount"></span>
+                </div>
+                <div class="mb-3">
+                    <button class="btn btn-primary" id="goToChatBtn">
+                        <i class="fas fa-comment me-2"></i>
+                        Перейти в чат
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                <button type="button" class="btn btn-success" id="resolveRequestBtn">
+                    <i class="fas fa-check me-2"></i>
+                    Отметить как решенную
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', async function() {
+        const requestsContainer = document.getElementById('requestsContainer');
+        const emptyState = document.getElementById('emptyState');
+        const modalUsername = document.getElementById('modalUsername');
+        const modalTimestamp = document.getElementById('modalTimestamp');
+        const modalMessageCount = document.getElementById('modalMessageCount');
+        const goToChatBtn = document.getElementById('goToChatBtn');
+        const resolveRequestBtn = document.getElementById('resolveRequestBtn');
+        const requestDetailsModal = new bootstrap.Modal(document.getElementById('requestDetailsModal'));
+        
+        let currentChatId = null;
+        
+        // Загрузка списка заявок
+        async function loadRequests() {
+            try {
+                const requests = await api.getSupportRequests();
+                
+                // Скрываем сообщение об отсутствии заявок, если есть заявки
+                if (requests.length > 0) {
+                    emptyState.style.display = 'none';
+                } else {
+                    emptyState.style.display = 'block';
+                }
+                
+                // Очищаем контейнер перед добавлением новых карточек
+                requestsContainer.innerHTML = '';
+                if (requests.length === 0) {
+                    requestsContainer.appendChild(emptyState);
+                }
+                
+                // Создаем карточку для каждой заявки
+                requests.forEach(request => {
+                    const card = createRequestCard(request);
+                    requestsContainer.appendChild(card);
+                });
+                
+                // Обновляем счетчик заявок в меню
+                updateRequestCount(requests.length);
+            } catch (error) {
+                console.error('Ошибка при загрузке заявок:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Ошибка',
+                    text: 'Не удалось загрузить список заявок. Пожалуйста, попробуйте позже.',
+                });
+            }
+        }
+        
+        // Создание карточки заявки
+        function createRequestCard(request) {
+            const col = document.createElement('div');
+            col.className = 'col-md-6 col-lg-4 mb-4';
+            
+            const cardDate = new Date(request.timestamp);
+            const formattedDate = cardDate.toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            col.innerHTML = `
+                <div class="card request-card" data-chat-id="${request.chat_id}">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <i class="fas fa-user me-2"></i>
+                            ${request.username}
+                        </div>
+                        <span class="badge badge-new">${request.status}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-2">
+                            <small class="request-timestamp">
+                                <i class="far fa-clock me-1"></i>
+                                ${formattedDate}
+                            </small>
+                            <small>
+                                <i class="far fa-comments me-1"></i>
+                                ${request.message_count} сообщений
+                            </small>
+                        </div>
+                        <button class="btn btn-primary btn-sm w-100 mt-2 view-details-btn">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Подробнее
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            // Добавляем обработчик для кнопки "Подробнее"
+            col.querySelector('.view-details-btn').addEventListener('click', () => {
+                showRequestDetails(request);
+            });
+            
+            return col;
+        }
+        
+        // Показать детали заявки в модальном окне
+        function showRequestDetails(request) {
+            currentChatId = request.chat_id;
+            
+            // Заполняем модальное окно данными заявки
+            modalUsername.textContent = request.username;
+            
+            const requestDate = new Date(request.timestamp);
+            modalTimestamp.textContent = requestDate.toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            modalMessageCount.textContent = request.message_count;
+            
+            // Настраиваем кнопку перехода в чат
+            goToChatBtn.onclick = () => {
+                window.location.href = `/chat/${request.chat_id}`;
+            };
+            
+            // Показываем модальное окно
+            requestDetailsModal.show();
+        }
+        
+        // Обработчик для кнопки "Отметить как решенную"
+        resolveRequestBtn.addEventListener('click', async () => {
+            if (!currentChatId) return;
+            
+            try {
+                // Показываем индикатор загрузки
+                Swal.fire({
+                    title: 'Обработка...',
+                    text: 'Пожалуйста, подождите',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+                
+                // Отправляем запрос на отметку заявки как решенной
+                await api.resolveSupportRequest(currentChatId);
+                
+                // Закрываем модальное окно
+                requestDetailsModal.hide();
+                
+                // Показываем сообщение об успехе
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Готово!',
+                    text: 'Заявка успешно отмечена как решенная',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                
+                // Перезагружаем список заявок
+                loadRequests();
+            } catch (error) {
+                console.error('Ошибка при отметке заявки как решенной:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Ошибка',
+                    text: 'Не удалось отметить заявку как решенную. Пожалуйста, попробуйте позже.',
+                });
+            }
+        });
+        
+        // Обновить счетчик заявок в боковом меню
+        function updateRequestCount(count) {
+            const badge = document.querySelector('#support-requests-badge');
+            if (badge) {
+                badge.textContent = count;
+                badge.style.display = count > 0 ? 'inline-block' : 'none';
+            }
+        }
+        
+        // Загружаем заявки при загрузке страницы
+        loadRequests();
+        
+        // Устанавливаем интервал для периодического обновления списка заявок
+        setInterval(loadRequests, 30000); // Обновляем каждые 30 секунд
+    });
+</script>
+{% endblock %} 

@@ -19,11 +19,21 @@ class UserBase(BaseModel):
     username: str
     email: EmailStr
     is_active: Optional[bool] = True
+    role: Optional[str] = "user"  # Возможные значения: "user", "operator", "admin"
 
 
 class UserCreate(UserBase):
     """Данные для создания пользователя"""
     password: str = Field(..., min_length=8)
+
+
+class UserUpdate(BaseModel):
+    """Данные для обновления пользователя"""
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+    role: Optional[str] = None
 
 
 class User(UserBase):
@@ -32,7 +42,7 @@ class User(UserBase):
     created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class UserInDB(User):
@@ -40,7 +50,7 @@ class UserInDB(User):
     hashed_password: str
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class LoginRequest(BaseModel):
@@ -56,6 +66,7 @@ class LoginResponse(BaseModel):
     user_id: int
     username: str
     email: EmailStr
+    role: str
 
 
 # Схемы для категорий
@@ -75,7 +86,7 @@ class Category(CategoryBase):
     id: int
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Схемы для тендеров
@@ -113,7 +124,7 @@ class Tender(TenderBase):
     creator_id: int
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class TenderDetail(Tender):
@@ -124,7 +135,7 @@ class TenderDetail(Tender):
     documents: List['Document'] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Схемы для заявок на тендеры
@@ -155,7 +166,7 @@ class Bid(BidBase):
     bidder_id: int
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class BidDetail(Bid):
@@ -164,7 +175,7 @@ class BidDetail(Bid):
     bidder: User
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Схемы для документов
@@ -188,7 +199,7 @@ class Document(DocumentBase):
     upload_date: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Схемы для ChatHistory
@@ -212,7 +223,7 @@ class ChatHistory(ChatHistoryBase):
     timestamp: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ChatHistoryUpdate(BaseModel):
@@ -221,7 +232,7 @@ class ChatHistoryUpdate(BaseModel):
     message_metadata: Optional[Dict[str, Any]] = None
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ChatConversation(BaseModel):
@@ -230,7 +241,7 @@ class ChatConversation(BaseModel):
     messages: List[ChatHistory]
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Схемы для новой модели Data
@@ -258,7 +269,7 @@ class Data(DataBase):
     updated_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ChatRatingBase(BaseModel):
@@ -280,7 +291,7 @@ class ChatRating(ChatRatingBase):
     timestamp: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Решаем проблему циклических ссылок

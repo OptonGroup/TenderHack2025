@@ -1,143 +1,413 @@
-{% extends "base.html" %}
+{% extends "layout.html" %}
 
-{% block title %}Умный помощник - Портал Поставщиков{% endblock %}
+{% block title %}AI Чат - TenderHack Platform{% endblock %}
 
 {% block extra_css %}
 <style>
-    .chat-container {
-        height: 65vh;
+    .chat-page {
+        min-height: calc(100vh - 80px - 430px);
         display: flex;
-        flex-direction: column;
+        padding: 20px 0;
     }
     
-    .chat-messages {
-        flex-grow: 1;
+    .chat-sidebar {
+        width: 280px;
+        background-color: var(--white);
+        box-shadow: var(--box-shadow);
+        border-radius: var(--border-radius);
+        margin-right: 20px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        height: calc(100vh - 100px);
+    }
+    
+    .chat-sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid var(--light-gray);
+    }
+    
+    .chat-list {
+        flex: 1;
         overflow-y: auto;
-        padding: 1rem;
-        background-color: #f8f9fa;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
+        padding: 10px;
+    }
+    
+    .chat-item {
+        padding: 10px 15px;
+        border-radius: var(--border-radius);
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+    }
+    
+    .chat-item:hover, .chat-item.active {
+        background-color: rgba(var(--bs-primary-rgb), 0.1);
+    }
+    
+    .chat-item-icon {
+        margin-right: 12px;
+        color: var(--primary-color);
+    }
+    
+    .chat-item-text {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+    
+    .chat-item-time {
+        font-size: 0.75rem;
+        color: var(--medium-gray);
+        margin-top: 5px;
+    }
+    
+    .chat-main {
+        flex: 1;
+        background-color: var(--white);
+        box-shadow: var(--box-shadow);
+        border-radius: var(--border-radius);
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 100px);
+        overflow: hidden;
+    }
+    
+    .chat-header {
+        padding: 15px 20px;
+        border-bottom: 1px solid var(--light-gray);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .chat-header-left {
+        display: flex;
+        align-items: center;
+    }
+    
+    .chat-title {
+        margin-bottom: 0;
+        margin-left: 10px;
+    }
+    
+    .chat-header .btn-icon {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .chat-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
     }
     
     .message {
-        margin-bottom: 1rem;
-        padding: 0.75rem 1rem;
-        border-radius: 1rem;
+        display: flex;
+        flex-direction: column;
         max-width: 80%;
-        position: relative;
+        margin-bottom: 20px;
+        animation: fadeIn 0.3s ease-in-out;
     }
     
-    .user-message {
-        background-color: #e9ecef;
-        margin-left: auto;
-        border-bottom-right-radius: 0.25rem;
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
     }
     
-    .assistant-message {
-        background-color: #cfe2ff;
-        margin-right: auto;
-        border-bottom-left-radius: 0.25rem;
+    .message-user {
+        align-self: flex-end;
+    }
+    
+    .message-bot {
+        align-self: flex-start;
+    }
+    
+    .message-content {
+        padding: 12px 18px;
+        border-radius: var(--border-radius);
+        margin-bottom: 5px;
+    }
+    
+    .message-user .message-content {
+        background-color: var(--primary-color);
+        color: white;
+        border-top-right-radius: 0;
+    }
+    
+    .message-bot .message-content {
+        background-color: var(--light-gray);
+        color: var(--dark-gray);
+        border-top-left-radius: 0;
+    }
+    
+    .message-meta {
+        display: flex;
+        align-items: center;
+        margin-top: 5px;
     }
     
     .message-time {
         font-size: 0.75rem;
-        color: #6c757d;
-        position: absolute;
-        bottom: 0.3rem;
-        right: 0.75rem;
+        color: var(--medium-gray);
+    }
+    
+    .message-feedback {
+        display: flex;
+        align-items: center;
+        margin-left: auto;
+    }
+    
+    .message-feedback-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        margin-left: 8px;
+        cursor: pointer;
+        opacity: 0.6;
+        transition: var(--transition);
+    }
+    
+    .message-feedback-btn:hover, .message-feedback-btn.active {
+        opacity: 1;
+    }
+    
+    .message-feedback-btn.like.active {
+        color: #28a745;
+    }
+    
+    .message-feedback-btn.dislike.active {
+        color: #dc3545;
+    }
+    
+    .chat-footer {
+        border-top: 1px solid var(--light-gray);
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
     }
     
     .chat-input {
-        display: flex;
-        gap: 0.5rem;
-    }
-    
-    .chat-input textarea {
-        resize: none;
-        height: 60px;
-    }
-    
-    .assistant-message p {
-        margin-bottom: 0.5rem;
-    }
-    
-    .assistant-message .sources {
-        font-size: 0.8rem;
-        color: #6c757d;
-        border-top: 1px solid #dee2e6;
-        padding-top: 0.5rem;
-        margin-top: 0.5rem;
-    }
-    
-    .chat-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-    }
-    
-    .thinking {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        color: #6c757d;
-        font-style: italic;
-    }
-    
-    .dot-pulse {
-        display: inline-flex;
+        flex: 1;
         position: relative;
-        width: 10px;
-        height: 10px;
     }
     
-    .dot-pulse::before {
-        content: '';
-        display: inline-block;
-        width: 10px;
-        height: 10px;
-        border-radius: 5px;
-        background-color: #6c757d;
-        color: #6c757d;
-        box-shadow: 10px 0 #6c757d, 20px 0 #6c757d;
-        animation: dot-pulse 1.5s infinite linear;
+    .chat-input-textarea {
+        width: 100%;
+        border: 1px solid var(--light-gray);
+        border-radius: 20px;
+        padding: 12px 50px 12px 15px;
+        resize: none;
+        max-height: 120px;
+        transition: var(--transition);
     }
     
-    @keyframes dot-pulse {
-        0% { opacity: 0.2; }
-        50% { opacity: 1; }
-        100% { opacity: 0.2; }
+    .chat-input-textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+    
+    .chat-input-actions {
+        position: absolute;
+        right: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        align-items: center;
+    }
+    
+    .chat-input-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        margin-left: 10px;
+        opacity: 0.6;
+        transition: var(--transition);
+    }
+    
+    .chat-input-btn:hover {
+        opacity: 1;
+    }
+    
+    .chat-input-btn.send {
+        color: var(--primary-color);
+    }
+    
+    /* Индикатор набора сообщения */
+    .typing-indicator {
+        display: flex;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .typing-dot {
+        width: 8px;
+        height: 8px;
+        margin: 0 2px;
+        background-color: var(--medium-gray);
+        border-radius: 50%;
+        opacity: 0.6;
+        animation: typingAnimation 1.5s infinite ease-in-out;
+    }
+    
+    .typing-dot:nth-child(1) {
+        animation-delay: 0s;
+    }
+    
+    .typing-dot:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+    
+    .typing-dot:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+    
+    @keyframes typingAnimation {
+        0% { transform: translateY(0); }
+        25% { transform: translateY(-5px); }
+        50% { transform: translateY(0); }
+        100% { transform: translateY(0); }
+    }
+    
+    /* Модальное окно оценки чата */
+    .rating-stars {
+        display: flex;
+        justify-content: center;
+        margin: 20px 0;
+    }
+    
+    .rating-star {
+        font-size: 2rem;
+        color: #ccc;
+        cursor: pointer;
+        transition: var(--transition);
+        margin: 0 5px;
+    }
+    
+    .rating-star:hover, .rating-star.active {
+        color: #ffc107;
+    }
+    
+    /* Адаптивность */
+    @media (max-width: 768px) {
+        .chat-page {
+            flex-direction: column;
+        }
+        
+        .chat-sidebar {
+            width: 100%;
+            height: auto;
+            margin-right: 0;
+            margin-bottom: 20px;
+            max-height: 300px;
+        }
+        
+        .chat-main {
+            height: calc(100vh - 400px);
+        }
+        
+        .message {
+            max-width: 90%;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-12">
-        <div class="card mb-4">
-            <div class="card-body">
-                <div class="chat-header">
-                    <h2><i class="fas fa-robot me-2"></i>Умный помощник по тендерам</h2>
-                    <div>
-                        <button id="clearChat" class="btn btn-outline-danger btn-sm">
-                            <i class="fas fa-trash"></i> Очистить историю
+<div class="chat-page">
+    <div class="chat-sidebar">
+        <div class="chat-sidebar-header">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Мои чаты</h5>
+                <button class="btn-icon" id="new-chat-btn" title="Новый чат">
+                    <i class="bi bi-plus-lg"></i>
+                    <span class="tooltip">Новый чат</span>
+                </button>
+            </div>
+        </div>
+        <div class="chat-list" id="chat-list">
+            <!-- Список чатов будет добавляться динамически -->
+        </div>
+    </div>
+    
+    <div class="chat-main">
+        <div class="chat-header">
+            <div class="chat-header-left">
+                <button class="btn-icon d-md-none" id="toggle-sidebar-btn">
+                    <i class="bi bi-list"></i>
+                </button>
+                <i class="bi bi-chat-dots fs-4 text-primary"></i>
+                <h5 class="chat-title">Новый чат</h5>
+            </div>
+            <div>
+                <button class="btn-icon" id="finish-chat-btn" title="Завершить чат">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="tooltip">Завершить чат</span>
+                </button>
+            </div>
+        </div>
+        
+        <div class="chat-body" id="chat-body">
+            <!-- Приветственное сообщение -->
+            <div class="message message-bot">
+                <div class="message-content">
+                    <p class="mb-0">Привет! Я AI-ассистент TenderHack. Чем я могу вам помочь сегодня?</p>
+                </div>
+                <div class="message-meta">
+                    <div class="message-time">Сейчас</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-footer">
+            <div class="chat-input">
+                <textarea class="chat-input-textarea" id="chat-input-textarea" placeholder="Введите ваше сообщение..." rows="1"></textarea>
+                <div class="chat-input-actions">
+                    <div class="d-flex align-items-center">
+                        <button class="btn btn-link text-dark p-0 mx-1" id="voiceInputBtn" title="Голосовой ввод">
+                            <i class="fas fa-microphone"></i>
+                        </button>
+                        <button class="btn btn-link text-dark p-0 mx-1" id="operatorHelpBtn" title="Запросить помощь оператора">
+                            <i class="fas fa-headset"></i>
                         </button>
                     </div>
+                    <button class="chat-input-btn send" id="send-btn" title="Отправить">
+                        <i class="bi bi-send"></i>
+                    </button>
                 </div>
-                
-                <div class="chat-container">
-                    <div id="chatMessages" class="chat-messages"></div>
-                    <div id="thinking" class="thinking d-none mb-2">
-                        <span>Помощник печатает</span>
-                        <div class="dot-pulse"></div>
-                    </div>
-                    <div class="chat-input">
-                        <textarea id="userMessage" class="form-control" placeholder="Введите ваш вопрос..." aria-label="Сообщение"></textarea>
-                        <button id="sendMessage" class="btn btn-primary">
-                            <i class="fas fa-paper-plane"></i>
-                        </button>
-                    </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно оценки чата -->
+<div class="modal fade" id="ratingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Оцените ваш опыт</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-center">Насколько полезным был этот чат?</p>
+                <div class="rating-stars">
+                    <span class="rating-star" data-rating="1"><i class="bi bi-star-fill"></i></span>
+                    <span class="rating-star" data-rating="2"><i class="bi bi-star-fill"></i></span>
+                    <span class="rating-star" data-rating="3"><i class="bi bi-star-fill"></i></span>
+                    <span class="rating-star" data-rating="4"><i class="bi bi-star-fill"></i></span>
+                    <span class="rating-star" data-rating="5"><i class="bi bi-star-fill"></i></span>
                 </div>
+                <div class="mb-3">
+                    <label for="rating-comment" class="form-label">Комментарий (необязательно)</label>
+                    <textarea class="form-control" id="rating-comment" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="submit-rating-btn">Отправить</button>
             </div>
         </div>
     </div>
@@ -147,191 +417,648 @@
 {% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const chatMessages = document.getElementById('chatMessages');
-        const userMessageInput = document.getElementById('userMessage');
-        const sendMessageButton = document.getElementById('sendMessage');
-        const clearChatButton = document.getElementById('clearChat');
-        const thinkingIndicator = document.getElementById('thinking');
-        const exampleQuestions = document.querySelectorAll('.example-question');
+        // Основные элементы интерфейса
+        const chatBody = document.querySelector('.chat-body');
+        const chatInputTextarea = document.getElementById('chat-input-textarea');
+        const sendBtn = document.getElementById('send-btn');
+        const chatList = document.querySelector('.chat-list');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const voiceBtn = document.getElementById('voiceInputBtn');
+        const finishChatBtn = document.getElementById('finish-chat-btn');
+        const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+        const ratingModal = new bootstrap.Modal(document.getElementById('ratingModal'));
+        const ratingStars = document.querySelectorAll('.rating-star');
+        const submitRatingBtn = document.getElementById('submit-rating-btn');
+        const operatorHelpBtn = document.getElementById('operatorHelpBtn');
         
-        // Загрузка истории сообщений из localStorage
-        function loadChatHistory() {
-            const chatHistory = localStorage.getItem('chatHistory');
-            if (chatHistory) {
-                chatMessages.innerHTML = chatHistory;
-                scrollToBottom();
-            } else {
-                // Добавляем приветственное сообщение, если истории нет
-                const welcomeMessage = createAssistantMessage(
-                    "Здравствуйте! Я умный помощник по тендерам. Чем я могу вам помочь сегодня?",
-                    new Date().toISOString()
-                );
-                chatMessages.appendChild(welcomeMessage);
-                saveChatHistory();
-            }
-        }
+        // Переменные для работы с чатом
+        let currentChatId = generateChatId(); // Генерируем ID нового чата при загрузке
+        let currentRating = 0;
+        let recognition = null; // Переменная для хранения объекта распознавания речи
         
-        // Сохранение истории сообщений в localStorage
-        function saveChatHistory() {
-            localStorage.setItem('chatHistory', chatMessages.innerHTML);
-        }
-        
-        // Создание элемента сообщения пользователя
-        function createUserMessage(text, timestamp) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message user-message';
-            
-            const messageText = document.createElement('p');
-            messageText.textContent = text;
-            messageDiv.appendChild(messageText);
-            
-            const messageTime = document.createElement('span');
-            messageTime.className = 'message-time';
-            const date = new Date(timestamp);
-            messageTime.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            messageDiv.appendChild(messageTime);
-            
-            return messageDiv;
-        }
-        
-        // Создание элемента сообщения ассистента
-        function createAssistantMessage(text, timestamp, sources = []) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message assistant-message';
-            
-            const messageText = document.createElement('p');
-            messageText.innerHTML = text.replace(/\n/g, '<br>');
-            messageDiv.appendChild(messageText);
-            
-            if (sources && sources.length > 0) {
-                const sourcesDiv = document.createElement('div');
-                sourcesDiv.className = 'sources';
-                
-                const sourcesTitle = document.createElement('p');
-                sourcesTitle.className = 'mb-1';
-                sourcesTitle.textContent = 'Источники:';
-                sourcesDiv.appendChild(sourcesTitle);
-                
-                const sourcesList = document.createElement('ul');
-                sourcesList.className = 'mb-0';
-                sources.forEach(source => {
-                    const sourceItem = document.createElement('li');
-                    sourceItem.textContent = source;
-                    sourcesList.appendChild(sourceItem);
-                });
-                sourcesDiv.appendChild(sourcesList);
-                
-                messageDiv.appendChild(sourcesDiv);
-            }
-            
-            const messageTime = document.createElement('span');
-            messageTime.className = 'message-time';
-            const date = new Date(timestamp);
-            messageTime.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            messageDiv.appendChild(messageTime);
-            
-            return messageDiv;
-        }
-        
-        // Прокрутка чата вниз
-        function scrollToBottom() {
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-        
-        // Отправка сообщения нейросети
-        async function sendMessageToAI(message) {
+        // Инициализация
+        async function init() {
+            // Загрузка списка чатов
             try {
-                thinkingIndicator.classList.remove('d-none');
+                // Пытаемся получить список чатов пользователя
+                console.log('Инициализация чата, загрузка списка чатов...');
+                const chats = await api.getUserChats();
+                console.log('Получены чаты пользователя:', chats);
                 
-                const response = await fetch('http://localhost:7777/query?query=' + encodeURIComponent(message));
-                
-                if (!response.ok) {
-                    throw new Error('Ошибка при получении ответа от сервера.');
+                if (chats && chats.length > 0) {
+                    // Если у пользователя есть чаты, отображаем их
+                    renderChatList(chats);
+                    
+                    // Загружаем последний чат
+                    console.log('Загружаем последний чат:', chats[0]);
+                    await loadChat(chats[0]);
+                } else {
+                    // Если чатов нет, показываем пустой список и создаем новый чат
+                    renderEmptyChatList();
+                    createNewChat();
                 }
-                
-                const data = await response.json();
-                thinkingIndicator.classList.add('d-none');
-                
-                return {
-                    answer: data.answer || 'Не удалось получить ответ.',
-                    sources: data.sources || []
-                };
             } catch (error) {
-                console.error('Ошибка при отправке запроса:', error);
-                thinkingIndicator.classList.add('d-none');
-                return {
-                    answer: 'Извините, произошла ошибка при обработке вашего запроса. Пожалуйста, попробуйте еще раз позже.',
-                    sources: []
-                };
+                console.error('Error loading chat list:', error);
+                // Показываем сообщение, что чатов еще нет
+                renderEmptyChatList();
+                createNewChat();
             }
+            
+            // Адаптивное изменение высоты текстового поля
+            chatInputTextarea.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            });
+            
+            // Обработчик отправки сообщения
+            sendBtn.addEventListener('click', sendMessage);
+            chatInputTextarea.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            
+            // Обработчик голосового ввода
+            voiceBtn.addEventListener('click', toggleVoiceInput);
+            
+            // Обработчик создания нового чата
+            newChatBtn.addEventListener('click', createNewChat);
+            
+            // Обработчик завершения чата
+            finishChatBtn.addEventListener('click', finishChat);
+            
+            // Обработчик переключения сайдбара на мобильных устройствах
+            if (toggleSidebarBtn) {
+                toggleSidebarBtn.addEventListener('click', function() {
+                    document.querySelector('.chat-sidebar').classList.toggle('open');
+                });
+            }
+            
+            // Обработчики для модального окна оценки
+            ratingStars.forEach(star => {
+                star.addEventListener('click', function() {
+                    ratingStars.forEach(s => s.classList.remove('active'));
+                    
+                    const rating = parseInt(this.getAttribute('data-rating'));
+                    currentRating = rating;
+                    
+                    for (let i = 0; i < rating; i++) {
+                        ratingStars[i].classList.add('active');
+                    }
+                });
+            });
+            
+            submitRatingBtn.addEventListener('click', submitRating);
+            
+            // Добавить обработчик события для кнопки запроса помощи оператора
+            operatorHelpBtn.addEventListener('click', async function() {
+                const chatId = document.querySelector('[data-chat-id]').dataset.chatId;
+                
+                // Показываем модальное окно для ввода сообщения оператору
+                Swal.fire({
+                    title: 'Запрос помощи оператора',
+                    text: 'Укажите ваш вопрос или проблему для оператора:',
+                    input: 'textarea',
+                    inputPlaceholder: 'Опишите свою проблему подробно...',
+                    showCancelButton: true,
+                    confirmButtonText: 'Отправить запрос',
+                    cancelButtonText: 'Отмена',
+                    showLoaderOnConfirm: true,
+                    preConfirm: async (message) => {
+                        if (!message || message.trim() === '') {
+                            Swal.showValidationMessage('Пожалуйста, опишите вашу проблему');
+                            return false;
+                        }
+                        
+                        try {
+                            // Отправляем запрос оператору
+                            const result = await api.requestOperatorHelp(chatId, message);
+                            return result;
+                        } catch (error) {
+                            Swal.showValidationMessage(`Ошибка отправки запроса: ${error.message}`);
+                            return false;
+                        }
+                    },
+                    allowOutsideClick: () => !Swal.isLoading()
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Обновляем историю чата, чтобы показать новое сообщение
+                        getChatHistory();
+                        
+                        // Показываем уведомление об успешной отправке
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Запрос отправлен',
+                            text: 'Оператор свяжется с вами в ближайшее время.',
+                            timer: 3000,
+                            showConfirmButton: false
+                        });
+                    }
+                });
+            });
         }
         
-        // Обработка отправки сообщения
-        async function handleSendMessage() {
-            const message = userMessageInput.value.trim();
+        // Отправка сообщения
+        async function sendMessage() {
+            const message = chatInputTextarea.value.trim();
             if (!message) return;
             
-            // Добавляем сообщение пользователя в чат
-            const timestamp = new Date().toISOString();
-            const userMessageElement = createUserMessage(message, timestamp);
-            chatMessages.appendChild(userMessageElement);
-            scrollToBottom();
-            saveChatHistory();
-            
             // Очищаем поле ввода
-            userMessageInput.value = '';
+            chatInputTextarea.value = '';
+            chatInputTextarea.style.height = 'auto';
             
-            // Получаем ответ от нейросети
-            const aiResponse = await sendMessageToAI(message);
-            
-            // Добавляем ответ ассистента в чат
-            const assistantTimestamp = new Date().toISOString();
-            const assistantMessageElement = createAssistantMessage(
-                aiResponse.answer,
-                assistantTimestamp,
-                aiResponse.sources
-            );
-            chatMessages.appendChild(assistantMessageElement);
-            scrollToBottom();
-            saveChatHistory();
+            try {
+                // Добавляем сообщение пользователя в интерфейс
+                addMessage(message, false);
+                
+                // Показываем индикатор набора
+                showTypingIndicator();
+                
+                // Сохраняем сообщение пользователя на сервере
+                console.log('Отправка сообщения пользователя на сервер, chatId:', currentChatId);
+                const userMessageData = await api.sendChatMessage(currentChatId, message);
+                console.log('Сообщение пользователя сохранено:', userMessageData);
+                
+                // Получаем ответ от AI (временная заглушка)
+                const aiResponse = await requestAIResponse(message);
+                
+                // Скрываем индикатор набора
+                hideTypingIndicator();
+                
+                // Добавляем ответ бота в интерфейс
+                addMessage(aiResponse.message, true, aiResponse.id);
+                
+                // Сохраняем ответ бота на сервере
+                console.log('Отправка ответа бота на сервер');
+                const botMessageData = await api.sendChatMessage(currentChatId, aiResponse.message, true);
+                console.log('Ответ бота сохранен:', botMessageData);
+                
+                // Проверяем на запрос оператора после ответа от AI
+                checkForOperatorRequest(message);
+                
+                // Обновляем список чатов
+                await updateChatList();
+                
+            } catch (error) {
+                console.error('Error sending message:', error);
+                hideTypingIndicator();
+                showToast('Ошибка при отправке сообщения: ' + error.message, 'error');
+            }
         }
         
-        // Обработчики событий
-        sendMessageButton.addEventListener('click', handleSendMessage);
-        
-        userMessageInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
+        // Проверка на запрос оператора
+        function checkForOperatorRequest(message) {
+            const operatorPhrases = ['вызвать оператора', 'позвать оператора', 'нужен оператор', 'соединить с оператором'];
+            
+            // Проверяем сообщение на наличие фраз для вызова оператора
+            const lowerMessage = message.toLowerCase();
+            const hasOperatorRequest = operatorPhrases.some(phrase => lowerMessage.includes(phrase));
+            
+            if (hasOperatorRequest) {
+                // Если найден запрос оператора, отображаем кнопку
+                console.log('Обнаружен запрос оператора в сообщении:', message);
+                showOperatorButton();
             }
-        });
+        }
         
-        clearChatButton.addEventListener('click', function() {
-            if (confirm('Вы уверены, что хотите очистить всю историю чата?')) {
-                chatMessages.innerHTML = '';
-                localStorage.removeItem('chatHistory');
+        // Показ кнопки вызова оператора
+        function showOperatorButton() {
+            // Проверяем, есть ли уже кнопка оператора
+            if (!document.querySelector('.operator-call-button')) {
+                const operatorButton = document.createElement('div');
+                operatorButton.className = 'operator-call-button animated-element';
+                operatorButton.innerHTML = `
+                    <button class="btn btn-primary">
+                        <i class="bi bi-headset me-2"></i> Соединиться с оператором
+                    </button>
+                `;
                 
-                // Добавляем приветственное сообщение после очистки
-                const welcomeMessage = createAssistantMessage(
-                    "Здравствуйте! Я умный помощник по тендерам. Чем я могу вам помочь сегодня?",
-                    new Date().toISOString()
+                // Добавляем обработчик для кнопки
+                operatorButton.querySelector('button').addEventListener('click', callOperator);
+                
+                // Находим последнее сообщение от бота и вставляем после него
+                const lastBotMessage = document.querySelector('.message-bot:last-child');
+                if (lastBotMessage) {
+                    lastBotMessage.insertAdjacentElement('afterend', operatorButton);
+                } else {
+                    // Если нет сообщений от бота, добавляем в конец чата
+                    chatBody.appendChild(operatorButton);
+                }
+                
+                // Анимируем появление кнопки
+                gsap.fromTo(operatorButton, 
+                    { opacity: 0, y: 20 }, 
+                    { opacity: 1, y: 0, duration: 0.3 }
                 );
-                chatMessages.appendChild(welcomeMessage);
-                saveChatHistory();
+                
+                // Прокручиваем чат вниз до кнопки
+                operatorButton.scrollIntoView({ behavior: 'smooth' });
             }
-        });
+        }
         
-        // Обработка примеров вопросов
-        exampleQuestions.forEach(question => {
-            question.addEventListener('click', function() {
-                const questionText = this.getAttribute('data-question');
-                userMessageInput.value = questionText;
-                userMessageInput.focus();
+        // Вызов оператора
+        async function callOperator() {
+            try {
+                // Показываем индикатор загрузки на кнопке
+                const operatorButton = document.querySelector('.operator-call-button button');
+                const originalText = operatorButton.innerHTML;
+                operatorButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Соединяем...';
+                operatorButton.disabled = true;
+                
+                // Имитация запроса к серверу
+                const response = await fetch('/api/call-operator', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${api.token}`
+                    },
+                    body: JSON.stringify({
+                        chat_id: currentChatId
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Запрос на вызов оператора отправлен:', data);
+                    
+                    // Добавляем системное сообщение в чат
+                    addMessage('Запрос на соединение с оператором отправлен. Ожидайте ответа.', true);
+                    
+                    // Обновляем вид кнопки
+                    operatorButton.innerHTML = '<i class="bi bi-check-circle me-2"></i>Запрос отправлен';
+                    operatorButton.classList.remove('btn-primary');
+                    operatorButton.classList.add('btn-success');
+                    
+                    // Через несколько секунд скрываем кнопку
+                    setTimeout(() => {
+                        gsap.to('.operator-call-button', {
+                            opacity: 0, 
+                            y: 20, 
+                            duration: 0.3,
+                            onComplete: () => document.querySelector('.operator-call-button').remove()
+                        });
+                    }, 5000);
+                    
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Ошибка при вызове оператора');
+                }
+                
+            } catch (error) {
+                console.error('Error calling operator:', error);
+                
+                // Восстанавливаем кнопку
+                const operatorButton = document.querySelector('.operator-call-button button');
+                operatorButton.innerHTML = '<i class="bi bi-headset me-2"></i> Соединиться с оператором';
+                operatorButton.disabled = false;
+                
+                showToast('Ошибка при вызове оператора: ' + error.message, 'error');
+            }
+        }
+        
+        // Добавление сообщения в чат
+        function addMessage(content, isBot, messageId) {
+            const message = document.createElement('div');
+            message.className = `message message-${isBot ? 'bot' : 'user'}`;
+            
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            messageContent.innerHTML = `<p class="mb-0">${content}</p>`;
+            
+            const messageMeta = document.createElement('div');
+            messageMeta.className = 'message-meta';
+            
+            const messageTime = document.createElement('div');
+            messageTime.className = 'message-time';
+            messageTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            messageMeta.appendChild(messageTime);
+            
+            // Добавляем кнопки обратной связи только для сообщений бота
+            if (isBot) {
+                const messageFeedback = document.createElement('div');
+                messageFeedback.className = 'message-feedback';
+                
+                const likeBtn = document.createElement('button');
+                likeBtn.className = 'message-feedback-btn like';
+                likeBtn.innerHTML = '<i class="bi bi-hand-thumbs-up"></i>';
+                likeBtn.setAttribute('data-message-id', messageId || 'temp_' + Date.now());
+                
+                const dislikeBtn = document.createElement('button');
+                dislikeBtn.className = 'message-feedback-btn dislike';
+                dislikeBtn.innerHTML = '<i class="bi bi-hand-thumbs-down"></i>';
+                dislikeBtn.setAttribute('data-message-id', messageId || 'temp_' + Date.now());
+                
+                // Обработчики кнопок обратной связи
+                likeBtn.addEventListener('click', function() {
+                    provideFeedback(this.getAttribute('data-message-id'), 'like', this, dislikeBtn);
+                });
+                
+                dislikeBtn.addEventListener('click', function() {
+                    provideFeedback(this.getAttribute('data-message-id'), 'dislike', this, likeBtn);
+                });
+                
+                messageFeedback.appendChild(likeBtn);
+                messageFeedback.appendChild(dislikeBtn);
+                messageMeta.appendChild(messageFeedback);
+            }
+            
+            message.appendChild(messageContent);
+            message.appendChild(messageMeta);
+            
+            chatBody.appendChild(message);
+            
+            // Прокручиваем чат вниз
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+        
+        // Показать индикатор набора
+        function showTypingIndicator() {
+            const typingIndicator = document.createElement('div');
+            typingIndicator.className = 'typing-indicator message message-bot';
+            typingIndicator.id = 'typing-indicator';
+            
+            const indicatorContent = document.createElement('div');
+            indicatorContent.className = 'message-content';
+            indicatorContent.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            `;
+            
+            typingIndicator.appendChild(indicatorContent);
+            chatBody.appendChild(typingIndicator);
+            
+            // Прокручиваем чат вниз
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+        
+        // Скрыть индикатор набора
+        function hideTypingIndicator() {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+        }
+        
+        // Предоставление обратной связи по сообщению
+        async function provideFeedback(messageId, type, activeBtn, oppositeBtn) {
+            try {
+                // Если кнопка уже активна, снимаем выделение
+                if (activeBtn.classList.contains('active')) {
+                    activeBtn.classList.remove('active');
+                    
+                    // Отправляем на сервер информацию об отмене обратной связи
+                    await api.updateChatMessage(messageId, {
+                        message_metadata: { feedback: null }
+                    });
+                    
+                    return;
+                }
+                
+                // Активируем выбранную кнопку и деактивируем противоположную
+                activeBtn.classList.add('active');
+                oppositeBtn.classList.remove('active');
+                
+                // Отправляем на сервер информацию об обратной связи
+                await api.updateChatMessage(messageId, {
+                    message_metadata: { feedback: type }
+                });
+                
+            } catch (error) {
+                console.error('Error providing feedback:', error);
+                showToast('Ошибка при отправке обратной связи', 'error');
+            }
+        }
+        
+        // Создание нового чата
+        function createNewChat() {
+            // Генерируем новый ID чата
+            currentChatId = generateChatId();
+            
+            // Очищаем историю чата
+            chatBody.innerHTML = '';
+            
+            // Добавляем приветственное сообщение
+            addMessage('Привет! Я AI-ассистент TenderHack. Чем я могу вам помочь сегодня?', true);
+            
+            // Обновляем заголовок чата
+            document.querySelector('.chat-title').textContent = 'Новый чат';
+            
+            // Обновляем активный чат в списке
+            updateActiveChat();
+            
+            // Показываем сообщение
+            showToast('Создан новый чат', 'info');
+        }
+        
+        // Завершение текущего чата
+        function finishChat() {
+            ratingModal.show();
+        }
+        
+        // Отправка оценки
+        async function submitRating() {
+            if (currentRating === 0) {
+                showToast('Пожалуйста, укажите оценку', 'error');
+                return;
+            }
+            
+            try {
+                const comment = document.getElementById('rating-comment').value.trim();
+                
+                // Отправляем оценку на сервер
+                await api.finishChat(currentChatId, currentRating, comment);
+                
+                // Закрываем модальное окно
+                ratingModal.hide();
+                
+                // Создаем новый чат
+                createNewChat();
+                
+                // Обновляем список чатов
+                await updateChatList();
+                
+                // Показываем сообщение об успехе
+                showToast('Спасибо за вашу оценку!', 'success');
+                
+            } catch (error) {
+                console.error('Error submitting rating:', error);
+                showToast('Ошибка при отправке оценки', 'error');
+            }
+        }
+        
+        // Включение/выключение голосового ввода
+        function toggleVoiceInput() {
+            try {
+                // Проверяем текущее состояние распознавания
+                if (recognition && recognition.recognizing) {
+                    recognition.stop();
+                    voiceBtn.innerHTML = '<i class="bi bi-mic"></i>';
+                    return;
+                }
+                
+                // Индикатор, что начинаем распознавание
+                voiceBtn.innerHTML = '<i class="bi bi-mic-fill text-danger"></i>';
+                
+                // Инициализируем распознавание речи
+                recognition = startSpeechRecognition(
+                    // onResult - обработчик успешного распознавания
+                    (result) => {
+                        chatInputTextarea.value += result;
+                        chatInputTextarea.focus();
+                        recognition.recognizing = false;
+                        voiceBtn.innerHTML = '<i class="bi bi-mic"></i>';
+                    },
+                    // onError - обработчик ошибок
+                    (error) => {
+                        console.error('Speech recognition error:', error);
+                        recognition.recognizing = false;
+                        voiceBtn.innerHTML = '<i class="bi bi-mic"></i>';
+                        showToast('Ошибка распознавания речи: ' + error, 'error');
+                    }
+                );
+                
+                if (recognition) {
+                    recognition.recognizing = true;
+                    
+                    // Обработчик окончания распознавания
+                    recognition.onend = function() {
+                        console.log('Распознавание завершено');
+                        recognition.recognizing = false;
+                        voiceBtn.innerHTML = '<i class="bi bi-mic"></i>';
+                    };
+                } else {
+                    showToast('Ваш браузер не поддерживает распознавание речи', 'error');
+                }
+            } catch (error) {
+                console.error('Ошибка при инициализации распознавания речи:', error);
+                voiceBtn.innerHTML = '<i class="bi bi-mic"></i>';
+                showToast('Не удалось запустить распознавание речи: ' + error.message, 'error');
+            }
+        }
+        
+        // Отображение списка чатов
+        function renderChatList(chats) {
+            chatList.innerHTML = '';
+            
+            if (!chats || chats.length === 0) {
+                renderEmptyChatList();
+                return;
+            }
+            
+            chats.forEach(chatId => {
+                const chatItem = document.createElement('div');
+                chatItem.className = 'chat-item';
+                chatItem.setAttribute('data-chat-id', chatId);
+                
+                const truncatedId = chatId.split('_')[0] + '...';
+                
+                chatItem.innerHTML = `
+                    <i class="bi bi-chat-left-text chat-item-icon"></i>
+                    <div class="chat-item-content">
+                        <div class="chat-item-text">Чат ${truncatedId}</div>
+                        <div class="chat-item-time">Сегодня</div>
+                    </div>
+                `;
+                
+                // Устанавливаем активный чат
+                if (chatId === currentChatId) {
+                    chatItem.classList.add('active');
+                }
+                
+                // Обработчик клика на чат
+                chatItem.addEventListener('click', function() {
+                    loadChat(chatId);
+                });
+                
+                chatList.appendChild(chatItem);
             });
-        });
+        }
         
-        // Загружаем историю чата при загрузке страницы
-        loadChatHistory();
+        // Рендеринг пустого списка чатов
+        function renderEmptyChatList() {
+            chatList.innerHTML = `
+                <div class="text-center p-4 text-muted">
+                    <i class="bi bi-chat-square-text fs-4 mb-2"></i>
+                    <p>У вас пока нет чатов</p>
+                </div>
+            `;
+        }
+        
+        // Загрузка выбранного чата
+        async function loadChat(chatId) {
+            try {
+                console.log('Загрузка чата:', chatId);
+                
+                // Показываем индикатор загрузки
+                chatBody.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Загрузка истории чата...</p></div>';
+                
+                // Обновляем текущий ID чата
+                currentChatId = chatId;
+                
+                // Получаем историю чата
+                const chatHistory = await api.getChatHistory(chatId);
+                console.log('Получена история чата:', chatHistory);
+                
+                // Очищаем историю текущего чата
+                chatBody.innerHTML = '';
+                
+                // Отображаем сообщения
+                if (chatHistory && chatHistory.messages && chatHistory.messages.length > 0) {
+                    console.log('Отображаем сообщения из истории:', chatHistory.messages.length);
+                    chatHistory.messages.forEach(msg => {
+                        addMessage(msg.message, msg.is_bot, msg.id);
+                    });
+                } else {
+                    console.log('История чата пуста, добавляем приветствие');
+                    // Если чат пустой, добавляем приветственное сообщение
+                    addMessage('Привет! Я AI-ассистент TenderHack. Чем я могу вам помочь сегодня?', true);
+                }
+                
+                // Обновляем заголовок чата
+                const truncatedId = chatId.split('_')[0] + '...';
+                document.querySelector('.chat-title').textContent = `Чат ${truncatedId}`;
+                
+                // Обновляем активный чат в списке
+                updateActiveChat();
+                
+                // Прокручиваем чат вниз
+                chatBody.scrollTop = chatBody.scrollHeight;
+                
+            } catch (error) {
+                console.error('Error loading chat:', error);
+                chatBody.innerHTML = '<div class="alert alert-danger m-3">Ошибка при загрузке чата. Попробуйте создать новый чат.</div>';
+                showToast('Ошибка при загрузке чата: ' + error.message, 'error');
+            }
+        }
+        
+        // Обновление активного чата в списке
+        function updateActiveChat() {
+            const chatItems = document.querySelectorAll('.chat-item');
+            chatItems.forEach(item => {
+                item.classList.remove('active');
+                if (item.getAttribute('data-chat-id') === currentChatId) {
+                    item.classList.add('active');
+                }
+            });
+        }
+        
+        // Обновление списка чатов
+        async function updateChatList() {
+            try {
+                const chats = await api.getUserChats();
+                renderChatList(chats);
+            } catch (error) {
+                console.error('Error updating chat list:', error);
+            }
+        }
+        
+        // Инициализация
+        init();
     });
 </script>
 {% endblock %} 
