@@ -27,10 +27,10 @@ from load_parquet_to_data import load_parquet_to_data
 app = FastAPI(title="TenderHack API", version="1.0.0")
 
 # Монтируем статические файлы
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="Backend/static"), name="static")
 
 # Настраиваем шаблоны
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory="Backend/templates")
 
 # Добавляем middleware для CORS
 app.add_middleware(
@@ -60,6 +60,10 @@ async def register_page(request: Request):
 @app.get("/profile", response_class=HTMLResponse)
 async def profile_page(request: Request):
     return templates.TemplateResponse("profile.html", {"request": request})
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request):
+    return templates.TemplateResponse("chat.html", {"request": request})
 
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

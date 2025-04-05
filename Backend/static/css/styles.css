@@ -1,62 +1,116 @@
-/* Основные цвета сайта */
+/**
+ * Основные стили для веб-сайта Портала Поставщиков
+ */
+
+/* Переменные */
 :root {
-    --main-blue: #264B82;
-    --gray-blue: #D4DBE6;
-    --pale-blue: #E7EEF7;
-    --red: #DB2B21;
-    --black: #1A1A1A;
-    --pale-black: #8C8C8C;
-    --green: #0D9B68;
-    --sea-dark: #167C85;
-    --sea-clear: #48BBC2;
-    --orange: #F67319;
-    --gray: #787972;
-    --gray-light: #C9D1DF;
-    --white: #FFFFFF;
+    --primary-color: #2962ff;
+    --primary-dark: #0039cb;
+    --primary-light: #768fff;
+    --secondary-color: #ff9800;
+    --secondary-dark: #c66900;
+    --secondary-light: #ffc947;
+    --success-color: #2e7d32;
+    --danger-color: #d32f2f;
+    --warning-color: #f57c00;
+    --info-color: #1976d2;
+    --dark-color: #212121;
+    --light-color: #f5f5f5;
+    --gray-100: #f8f9fa;
+    --gray-200: #e9ecef;
+    --gray-300: #dee2e6;
+    --gray-400: #ced4da;
+    --gray-500: #adb5bd;
+    --gray-600: #6c757d;
+    --gray-700: #495057;
+    --gray-800: #343a40;
+    --gray-900: #212529;
+    --font-family-base: 'Roboto', 'Segoe UI', sans-serif;
+    --font-size-base: 1rem;
+    --border-radius: 0.25rem;
+    --box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
 
 /* Общие стили */
 body {
-    font-family: 'Roboto', 'Arial', sans-serif;
-    color: var(--black);
-    background-color: #f5f5f5;
+    font-family: var(--font-family-base);
+    line-height: 1.6;
+    color: var(--gray-800);
+    background-color: #f8f9fa;
 }
 
-/* Исправление проблемы с прозрачностью (важно, чтобы это было после анимации) */
-.login-card, .register-card {
-    opacity: 1 !important;
-    background-color: var(--white);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+a {
+    color: var(--primary-color);
+    transition: color 0.2s ease-in-out;
 }
 
-/* Стили для шапки */
+a:hover {
+    color: var(--primary-dark);
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-dark);
+    border-color: var(--primary-dark);
+}
+
+.btn-outline-primary {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-outline-primary:hover {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+/* Анимации */
+.fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Шапка сайта */
 .header {
-    background-color: var(--white);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    padding: 0.5rem 0;
+    background-color: #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     position: sticky;
     top: 0;
     z-index: 1000;
 }
 
+.navbar {
+    padding: 0.75rem 0;
+}
+
 .navbar-brand {
-    display: flex;
-    align-items: center;
+    font-weight: 500;
 }
 
 .logo {
     height: 40px;
 }
 
-/* Стилизация навигации */
 .nav-link {
-    color: var(--black) !important;
+    padding: 0.5rem 1rem;
     font-weight: 500;
 }
 
-.nav-link:hover {
-    color: var(--main-blue) !important;
+.nav-link i {
+    margin-right: 0.5rem;
+}
+
+/* Иконки в навигации */
+.navbar i, .footer i {
+    margin-right: 0.5rem;
 }
 
 /* Кнопки авторизации */
@@ -65,84 +119,174 @@ body {
     align-items: center;
 }
 
-.auth-buttons .btn-outline-primary {
-    color: var(--black);
-    border-color: transparent;
-    background-color: transparent;
+.auth-buttons .btn {
+    margin-left: 0.5rem;
+}
+
+/* Профиль пользователя */
+.user-dropdown {
+    border: none;
+    background: transparent;
+    padding: 0.375rem 0.75rem;
+}
+
+.user-name {
     font-weight: 500;
-    margin-right: 10px;
 }
 
-.auth-buttons .btn-outline-primary:hover {
-    color: var(--main-blue);
-    background-color: transparent;
-    border-color: transparent;
+.user-avatar img {
+    border: 2px solid var(--gray-300);
 }
 
-.auth-buttons .btn-primary {
-    background-color: var(--red);
-    border-color: var(--red);
-    color: var(--white);
-    font-weight: 500;
-    padding: 8px 16px;
+/* Формы входа и регистрации */
+.login-card, .register-card {
+    box-shadow: var(--box-shadow);
+    border: none;
 }
 
-.auth-buttons .btn-primary:hover {
-    background-color: #c5231d;
-    border-color: #c5231d;
+.login-form, .register-form {
+    padding: 0.5rem;
 }
 
-/* Стили для кнопок с иконками */
-.btn i, .nav-link i {
-    margin-right: 8px;
+.toggle-password {
+    border-top-right-radius: var(--border-radius);
+    border-bottom-right-radius: var(--border-radius);
 }
 
-/* Формы */
-.form-control:focus {
-    border-color: var(--main-blue);
-    box-shadow: 0 0 0 0.25rem rgba(38, 75, 130, 0.25);
+/* Страница профиля */
+.stat-card {
+    text-align: center;
+    padding: 1.5rem;
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-.btn-primary {
-    background-color: var(--main-blue);
-    border-color: var(--main-blue);
+.stat-number {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
 }
 
-.btn-primary:hover {
-    background-color: #1b3965;
-    border-color: #1b3965;
+.stat-title {
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-/* Стилизация элементов формы */
-.form-label {
-    font-weight: 500;
-    color: var(--black);
+/* Страница чата */
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 65vh;
+    border-radius: var(--border-radius);
+    overflow: hidden;
 }
 
-.form-text {
-    color: var(--pale-black);
+.chat-messages {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    background-color: var(--gray-100);
 }
 
-/* Иконки выбора языка */
+.chat-input {
+    display: flex;
+    padding: 0.75rem;
+    background-color: white;
+}
+
+.chat-input textarea {
+    resize: none;
+    border-radius: var(--border-radius);
+}
+
+.message {
+    max-width: 80%;
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 1rem;
+    position: relative;
+}
+
+.user-message {
+    background-color: var(--gray-200);
+    margin-left: auto;
+    border-bottom-right-radius: 0.25rem;
+}
+
+.assistant-message {
+    background-color: #cfe2ff;
+    margin-right: auto;
+    border-bottom-left-radius: 0.25rem;
+}
+
+.message-time {
+    font-size: 0.75rem;
+    color: var(--gray-600);
+    position: absolute;
+    bottom: 0.3rem;
+    right: 0.75rem;
+}
+
+.message p {
+    margin-bottom: 0.5rem;
+}
+
+.sources {
+    font-size: 0.8rem;
+    color: var(--gray-600);
+    border-top: 1px solid var(--gray-300);
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.example-question {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.example-question:hover {
+    background-color: var(--gray-200);
+}
+
+.thinking {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--gray-600);
+    font-style: italic;
+    margin-bottom: 0.5rem;
+}
+
+/* Селектор языка */
+.language-selector {
+    margin-left: 0.5rem;
+}
+
 .flag-icon {
     width: 20px;
-    height: 14px;
-    margin-right: 5px;
+    height: auto;
+    margin-right: 0.5rem;
 }
 
-/* Стили для футера */
+/* Подвал сайта */
 .footer {
-    background-color: var(--gray-blue);
-    color: var(--black);
-    padding: 2rem 0;
+    background-color: var(--gray-800);
+    color: white;
 }
 
 .footer a {
-    color: var(--main-blue);
+    color: rgba(255, 255, 255, 0.8);
+    transition: color 0.2s;
 }
 
 .footer a:hover {
-    color: #1b3965;
+    color: white;
+    text-decoration: none;
+}
+
+.social-icons {
+    display: flex;
 }
 
 .social-icon {
@@ -151,111 +295,108 @@ body {
     justify-content: center;
     width: 36px;
     height: 36px;
+    background-color: rgba(255, 255, 255, 0.1);
     border-radius: 50%;
-    background-color: var(--main-blue);
-    color: var(--white);
-    text-decoration: none;
+    transition: background-color 0.2s;
 }
 
 .social-icon:hover {
-    background-color: #1b3965;
-    color: var(--white);
+    background-color: rgba(255, 255, 255, 0.2);
 }
 
-/* Для карточек на главной */
-.welcome-section {
-    padding: 2rem;
-    background-color: var(--pale-blue);
+/* Уведомления */
+.notifications-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1050;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 350px;
+}
+
+.notification {
+    display: flex;
+    align-items: flex-start;
+    padding: 12px 15px;
+    background-color: white;
     border-radius: 8px;
-    margin-bottom: 2rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideIn 0.3s forwards;
 }
 
-/* Анимации */
-.animate-fade-in {
-    animation: fadeIn 0.5s ease-in-out;
+.notification-icon {
+    margin-right: 12px;
+    font-size: 24px;
 }
 
-@keyframes fadeIn {
+.notification-success .notification-icon {
+    color: var(--success-color);
+}
+
+.notification-danger .notification-icon {
+    color: var(--danger-color);
+}
+
+.notification-warning .notification-icon {
+    color: var(--warning-color);
+}
+
+.notification-info .notification-icon {
+    color: var(--info-color);
+}
+
+.notification-content {
+    flex: 1;
+}
+
+.notification-close {
+    background: none;
+    border: none;
+    color: var(--gray-600);
+    cursor: pointer;
+    padding: 0;
+    font-size: 14px;
+    transition: color 0.2s;
+}
+
+.notification-close:hover {
+    color: var(--gray-800);
+}
+
+@keyframes slideIn {
     from {
         opacity: 0;
-        transform: translateY(-20px);
+        transform: translateX(50px);
     }
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateX(0);
     }
 }
 
-/* Кнопка "Наверх" */
-#backToTop {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    display: none;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background-color: var(--main-blue);
-    color: var(--white);
-    text-align: center;
-    line-height: 40px;
-    z-index: 99;
-    cursor: pointer;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+/* Адаптивность */
+@media (max-width: 767.98px) {
+    .auth-buttons {
+        margin-top: 0.5rem;
+    }
+    
+    .message {
+        max-width: 90%;
+    }
+    
+    .stat-card {
+        margin-bottom: 1rem;
+    }
 }
 
-#backToTop.show {
-    display: block;
-}
-
-/* Переопределение bootstrap */
-.btn-outline-secondary {
-    color: var(--black);
-    border-color: var(--gray-light);
-}
-
-.btn-outline-secondary:hover {
-    background-color: var(--gray-light);
-    color: var(--black);
-    border-color: var(--gray-light);
-}
-
-/* Стили для темной темы */
-[data-bs-theme="dark"] {
-    --bs-body-color: #e3e3e3;
-    --bs-body-bg: #2c2c2c;
-}
-
-[data-bs-theme="dark"] .header,
-[data-bs-theme="dark"] .login-card,
-[data-bs-theme="dark"] .register-card {
-    background-color: #3a3a3a;
-}
-
-[data-bs-theme="dark"] .nav-link {
-    color: #e3e3e3 !important;
-}
-
-[data-bs-theme="dark"] .form-control {
-    background-color: #4a4a4a;
-    border-color: #5a5a5a;
-    color: #e3e3e3;
-}
-
-/* Настройки GSAP-анимации */
-.gsap-fade-in {
-    opacity: 1 !important;
-}
-
-/* Верхняя панель (шапка) */
-.header .navbar {
-    padding: 0.5rem 0;
-}
-
-.header .navbar-brand {
-    margin-right: 2rem;
-}
-
-.header .navbar-brand img {
-    height: 36px;
+@media (max-width: 575.98px) {
+    .user-info {
+        display: none;
+    }
+    
+    .chat-container {
+        height: 75vh;
+    }
 }

@@ -1,0 +1,368 @@
+{% extends "base.html" %}
+
+{% block title %}Умный помощник - Портал Поставщиков{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chat-container {
+        height: 65vh;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .chat-messages {
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .message {
+        margin-bottom: 1rem;
+        padding: 0.75rem 1rem;
+        border-radius: 1rem;
+        max-width: 80%;
+        position: relative;
+    }
+    
+    .user-message {
+        background-color: #e9ecef;
+        margin-left: auto;
+        border-bottom-right-radius: 0.25rem;
+    }
+    
+    .assistant-message {
+        background-color: #cfe2ff;
+        margin-right: auto;
+        border-bottom-left-radius: 0.25rem;
+    }
+    
+    .message-time {
+        font-size: 0.75rem;
+        color: #6c757d;
+        position: absolute;
+        bottom: 0.3rem;
+        right: 0.75rem;
+    }
+    
+    .chat-input {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .chat-input textarea {
+        resize: none;
+        height: 60px;
+    }
+    
+    .assistant-message p {
+        margin-bottom: 0.5rem;
+    }
+    
+    .assistant-message .sources {
+        font-size: 0.8rem;
+        color: #6c757d;
+        border-top: 1px solid #dee2e6;
+        padding-top: 0.5rem;
+        margin-top: 0.5rem;
+    }
+    
+    .chat-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    
+    .thinking {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #6c757d;
+        font-style: italic;
+    }
+    
+    .dot-pulse {
+        display: inline-flex;
+        position: relative;
+        width: 10px;
+        height: 10px;
+    }
+    
+    .dot-pulse::before {
+        content: '';
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
+        background-color: #6c757d;
+        color: #6c757d;
+        box-shadow: 10px 0 #6c757d, 20px 0 #6c757d;
+        animation: dot-pulse 1.5s infinite linear;
+    }
+    
+    @keyframes dot-pulse {
+        0% { opacity: 0.2; }
+        50% { opacity: 1; }
+        100% { opacity: 0.2; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="chat-header">
+                    <h2><i class="fas fa-robot me-2"></i>Умный помощник по тендерам</h2>
+                    <div>
+                        <button id="clearChat" class="btn btn-outline-danger btn-sm">
+                            <i class="fas fa-trash"></i> Очистить историю
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="chat-container">
+                    <div id="chatMessages" class="chat-messages"></div>
+                    <div id="thinking" class="thinking d-none mb-2">
+                        <span>Помощник печатает</span>
+                        <div class="dot-pulse"></div>
+                    </div>
+                    <div class="chat-input">
+                        <textarea id="userMessage" class="form-control" placeholder="Введите ваш вопрос..." aria-label="Сообщение"></textarea>
+                        <button id="sendMessage" class="btn btn-primary">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Примеры вопросов</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card mb-2 example-question" data-question="Как мне зарегистрироваться на Портале Поставщиков?">
+                            <div class="card-body py-2 px-3">
+                                <small>Как мне зарегистрироваться на Портале Поставщиков?</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card mb-2 example-question" data-question="Какие документы нужны для участия в тендере?">
+                            <div class="card-body py-2 px-3">
+                                <small>Какие документы нужны для участия в тендере?</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card mb-2 example-question" data-question="Что делать, если я не выиграл тендер?">
+                            <div class="card-body py-2 px-3">
+                                <small>Что делать, если я не выиграл тендер?</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const chatMessages = document.getElementById('chatMessages');
+        const userMessageInput = document.getElementById('userMessage');
+        const sendMessageButton = document.getElementById('sendMessage');
+        const clearChatButton = document.getElementById('clearChat');
+        const thinkingIndicator = document.getElementById('thinking');
+        const exampleQuestions = document.querySelectorAll('.example-question');
+        
+        // Загрузка истории сообщений из localStorage
+        function loadChatHistory() {
+            const chatHistory = localStorage.getItem('chatHistory');
+            if (chatHistory) {
+                chatMessages.innerHTML = chatHistory;
+                scrollToBottom();
+            } else {
+                // Добавляем приветственное сообщение, если истории нет
+                const welcomeMessage = createAssistantMessage(
+                    "Здравствуйте! Я умный помощник по тендерам. Чем я могу вам помочь сегодня?",
+                    new Date().toISOString()
+                );
+                chatMessages.appendChild(welcomeMessage);
+                saveChatHistory();
+            }
+        }
+        
+        // Сохранение истории сообщений в localStorage
+        function saveChatHistory() {
+            localStorage.setItem('chatHistory', chatMessages.innerHTML);
+        }
+        
+        // Создание элемента сообщения пользователя
+        function createUserMessage(text, timestamp) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user-message';
+            
+            const messageText = document.createElement('p');
+            messageText.textContent = text;
+            messageDiv.appendChild(messageText);
+            
+            const messageTime = document.createElement('span');
+            messageTime.className = 'message-time';
+            const date = new Date(timestamp);
+            messageTime.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            messageDiv.appendChild(messageTime);
+            
+            return messageDiv;
+        }
+        
+        // Создание элемента сообщения ассистента
+        function createAssistantMessage(text, timestamp, sources = []) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant-message';
+            
+            const messageText = document.createElement('p');
+            messageText.innerHTML = text.replace(/\n/g, '<br>');
+            messageDiv.appendChild(messageText);
+            
+            if (sources && sources.length > 0) {
+                const sourcesDiv = document.createElement('div');
+                sourcesDiv.className = 'sources';
+                
+                const sourcesTitle = document.createElement('p');
+                sourcesTitle.className = 'mb-1';
+                sourcesTitle.textContent = 'Источники:';
+                sourcesDiv.appendChild(sourcesTitle);
+                
+                const sourcesList = document.createElement('ul');
+                sourcesList.className = 'mb-0';
+                sources.forEach(source => {
+                    const sourceItem = document.createElement('li');
+                    sourceItem.textContent = source;
+                    sourcesList.appendChild(sourceItem);
+                });
+                sourcesDiv.appendChild(sourcesList);
+                
+                messageDiv.appendChild(sourcesDiv);
+            }
+            
+            const messageTime = document.createElement('span');
+            messageTime.className = 'message-time';
+            const date = new Date(timestamp);
+            messageTime.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            messageDiv.appendChild(messageTime);
+            
+            return messageDiv;
+        }
+        
+        // Прокрутка чата вниз
+        function scrollToBottom() {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Отправка сообщения нейросети
+        async function sendMessageToAI(message) {
+            try {
+                thinkingIndicator.classList.remove('d-none');
+                
+                const response = await fetch('http://localhost:7777/query?query=' + encodeURIComponent(message));
+                
+                if (!response.ok) {
+                    throw new Error('Ошибка при получении ответа от сервера.');
+                }
+                
+                const data = await response.json();
+                thinkingIndicator.classList.add('d-none');
+                
+                return {
+                    answer: data.answer || 'Не удалось получить ответ.',
+                    sources: data.sources || []
+                };
+            } catch (error) {
+                console.error('Ошибка при отправке запроса:', error);
+                thinkingIndicator.classList.add('d-none');
+                return {
+                    answer: 'Извините, произошла ошибка при обработке вашего запроса. Пожалуйста, попробуйте еще раз позже.',
+                    sources: []
+                };
+            }
+        }
+        
+        // Обработка отправки сообщения
+        async function handleSendMessage() {
+            const message = userMessageInput.value.trim();
+            if (!message) return;
+            
+            // Добавляем сообщение пользователя в чат
+            const timestamp = new Date().toISOString();
+            const userMessageElement = createUserMessage(message, timestamp);
+            chatMessages.appendChild(userMessageElement);
+            scrollToBottom();
+            saveChatHistory();
+            
+            // Очищаем поле ввода
+            userMessageInput.value = '';
+            
+            // Получаем ответ от нейросети
+            const aiResponse = await sendMessageToAI(message);
+            
+            // Добавляем ответ ассистента в чат
+            const assistantTimestamp = new Date().toISOString();
+            const assistantMessageElement = createAssistantMessage(
+                aiResponse.answer,
+                assistantTimestamp,
+                aiResponse.sources
+            );
+            chatMessages.appendChild(assistantMessageElement);
+            scrollToBottom();
+            saveChatHistory();
+        }
+        
+        // Обработчики событий
+        sendMessageButton.addEventListener('click', handleSendMessage);
+        
+        userMessageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+            }
+        });
+        
+        clearChatButton.addEventListener('click', function() {
+            if (confirm('Вы уверены, что хотите очистить всю историю чата?')) {
+                chatMessages.innerHTML = '';
+                localStorage.removeItem('chatHistory');
+                
+                // Добавляем приветственное сообщение после очистки
+                const welcomeMessage = createAssistantMessage(
+                    "Здравствуйте! Я умный помощник по тендерам. Чем я могу вам помочь сегодня?",
+                    new Date().toISOString()
+                );
+                chatMessages.appendChild(welcomeMessage);
+                saveChatHistory();
+            }
+        });
+        
+        // Обработка примеров вопросов
+        exampleQuestions.forEach(question => {
+            question.addEventListener('click', function() {
+                const questionText = this.getAttribute('data-question');
+                userMessageInput.value = questionText;
+                userMessageInput.focus();
+            });
+        });
+        
+        // Загружаем историю чата при загрузке страницы
+        loadChatHistory();
+    });
+</script>
+{% endblock %} 
