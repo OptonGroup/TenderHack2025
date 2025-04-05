@@ -1,1 +1,2 @@
 symspellpy==6.9.0
+spacy==3.8.5

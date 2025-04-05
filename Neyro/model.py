@@ -474,6 +474,9 @@ class Model:
         # Классифицируем запрос
         query_classification = self.text_processor.classify_query(text)
         
+        # Извлекаем именованные сущности из запроса
+        query_spacy_entities = self.text_processor.extract_entities_spacy(text)
+        
         # Создаем вектор запроса
         if self.use_bert:
             query_embedding = self.bert_model.encode(text)
@@ -504,6 +507,22 @@ class Model:
                 # Вычисляем штраф за короткие тексты
                 length_penalty = min(1.0, word_count / 50)  # Полный вес только для текстов от 50 слов
                 
+                # Извлекаем именованные сущности из сегмента для сравнения с запросом
+                segment_spacy_entities = self.text_processor.extract_entities_spacy(segment)
+                
+                # Считаем совпадения сущностей
+                entity_matches = 0
+                for q_ent_text, q_ent_type in query_spacy_entities:
+                    for s_ent_text, s_ent_type in segment_spacy_entities:
+                        if q_ent_type == s_ent_type and (
+                            q_ent_text.lower() in s_ent_text.lower() or 
+                            s_ent_text.lower() in q_ent_text.lower()
+                        ):
+                            entity_matches += 1
+                
+                # Бонус за совпадение сущностей
+                entity_bonus = min(0.3, 0.1 * entity_matches)
+                
                 if self.use_bert:
                     # BERT-эмбединг для сегмента
                     try:
@@ -516,17 +535,19 @@ class Model:
                         tfidf_similarity = cosine_similarity(segment_vector, self.vectorizer.transform([self.text_processor.preprocess_text(text)]))[0][0]
                         
                         # Комбинируем с большим весом для TF-IDF
-                        segment_relevance = 0.5 * tfidf_similarity + 0.5 * bert_similarity
+                        segment_relevance = 0.4 * tfidf_similarity + 0.4 * bert_similarity + 0.2 * entity_bonus
                     except:
-                        # Если возникла ошибка, используем только TF-IDF
+                        # Если возникла ошибка, используем только TF-IDF и бонус за сущности
                         processed_segment = self.text_processor.preprocess_text(segment)
                         segment_vector = self.vectorizer.transform([processed_segment])
-                        segment_relevance = cosine_similarity(segment_vector, self.vectorizer.transform([self.text_processor.preprocess_text(text)]))[0][0]
+                        tfidf_similarity = cosine_similarity(segment_vector, self.vectorizer.transform([self.text_processor.preprocess_text(text)]))[0][0]
+                        segment_relevance = 0.8 * tfidf_similarity + 0.2 * entity_bonus
                 else:
-                    # TF-IDF для сегмента
+                    # TF-IDF для сегмента и бонус за сущности
                     processed_segment = self.text_processor.preprocess_text(segment)
                     segment_vector = self.vectorizer.transform([processed_segment])
-                    segment_relevance = cosine_similarity(segment_vector, self.vectorizer.transform([self.text_processor.preprocess_text(text)]))[0][0]
+                    tfidf_similarity = cosine_similarity(segment_vector, self.vectorizer.transform([self.text_processor.preprocess_text(text)]))[0][0]
+                    segment_relevance = 0.8 * tfidf_similarity + 0.2 * entity_bonus
                 
                 # Применяем штраф за длину текста
                 segment_relevance = segment_relevance * length_penalty
@@ -537,13 +558,22 @@ class Model:
                 # Проверяем присутствие ключевых слов запроса в сегменте
                 segment_lower = segment.lower()
                 
+                # Дополнительная информация о сущностях
+                entity_info = {
+                    'organizations': [ent_text for ent_text, ent_type in segment_spacy_entities if ent_type == 'ORG'],
+                    'persons': [ent_text for ent_text, ent_type in segment_spacy_entities if ent_type == 'PER'],
+                    'locations': [ent_text for ent_text, ent_type in segment_spacy_entities if ent_type == 'LOC']
+                }
+                
                 all_fragments.append({
                     'fragment': segment,
                     'relevance': combined_relevance,
                     'title': title,
                     'article_type': row['тип'],
                     'user_role': row['роль'],
-                    'component': row['компонент']
+                    'component': row['компонент'],
+                    'entity_matches': entity_matches,
+                    'entities': entity_info
                 })
         
         # Сортируем фрагменты по релевантности
@@ -565,19 +595,52 @@ class Model:
         # Классифицируем запрос
         query_classification = self.text_processor.classify_query(text)
         
+        # Извлекаем именованные сущности из запроса
+        spacy_entities = self.text_processor.extract_entities_spacy(text)
+        
+        # Формируем информацию о сущностях
+        orgs = query_classification.get('organizations', [])
+        persons = query_classification.get('persons', [])
+        locations = query_classification.get('locations', [])
+        
         # Формируем промпт
         prompt = f"""Пользователь задал вопрос, я тебе даю его вопрос(он может быть с орфографическими ошибками, неточностями и т.д.) и даю фрагменты из нашей базы знаний. тебе нужно соеденить все фрагменты в один ответ на вопрос пользователя, ответ должен ссылаться на источник ифнормации и можно немного выдумывать информацию, чтобы пользователь получил информацию, которая ему нужна
 Вопрос пользователя: {text}
 Тип запроса: {query_classification['query_type']}
 Роль пользователя: {query_classification['user_role'] or 'Не определена'}
 Компонент: {query_classification['component'] or 'Не определен'}
-
-Релевантные фрагменты из базы знаний:
 """
+
+        # Добавляем информацию о сущностях, если они есть
+        if orgs or persons or locations:
+            prompt += "\nВыявленные сущности в запросе:\n"
+            
+            if orgs:
+                prompt += f"- Организации: {', '.join(orgs)}\n"
+            if persons:
+                prompt += f"- Персоны: {', '.join(persons)}\n"
+            if locations:
+                prompt += f"- Местоположения: {', '.join(locations)}\n"
+
+        prompt += "\nРелевантные фрагменты из базы знаний:\n"
         
         # Добавляем фрагменты
         for i, fragment in enumerate(fragments, 1):
             prompt += f"\n--- Фрагмент {i} (из статьи '{fragment['title']}') ---\n{fragment['fragment']}\n"
+            
+            # Добавляем информацию о сущностях, найденных во фрагменте
+            if 'entities' in fragment and any(fragment['entities'].values()):
+                prompt += "Сущности в этом фрагменте: "
+                
+                entity_parts = []
+                if fragment['entities'].get('organizations'):
+                    entity_parts.append(f"Организации: {', '.join(fragment['entities']['organizations'])}")
+                if fragment['entities'].get('persons'):
+                    entity_parts.append(f"Персоны: {', '.join(fragment['entities']['persons'])}")
+                if fragment['entities'].get('locations'):
+                    entity_parts.append(f"Местоположения: {', '.join(fragment['entities']['locations'])}")
+                
+                prompt += "; ".join(entity_parts) + "\n"
         
         return prompt
     
@@ -776,6 +839,29 @@ if __name__ == "__main__":
         print(f"  Тип запроса: {query_analysis['query_type']}")
         print(f"  Роль пользователя: {query_analysis['user_role']}")
         print(f"  Компонент: {query_analysis['component']}")
+        
+        # Демонстрация работы NER с spaCy
+        print("\nДемонстрация работы NER с помощью spaCy:")
+        test_queries = [
+            "ООО Ромашка не может подписать контракт с Департаментом образования города Москвы",
+            "Иванов Иван Иванович не смог зарегистрироваться на портале",
+            "Как заказчику из Санкт-Петербурга оформить доставку товара?"
+        ]
+        
+        for test_query in test_queries:
+            print(f"\nЗапрос: '{test_query}'")
+            entities = model.text_processor.extract_entities_spacy(test_query)
+            
+            if entities:
+                print("Найденные сущности:")
+                for entity_text, entity_type in entities:
+                    print(f"  - {entity_text} ({entity_type})")
+            else:
+                print("Сущности не найдены или spaCy не загружен")
+                
+            # Также показываем обработанный текст
+            processed_text = model.text_processor.preprocess_text(test_query)
+            print(f"Обработанный текст: {processed_text[:100]}..." if len(processed_text) > 100 else f"Обработанный текст: {processed_text}")
         
         # Получение релевантных фрагментов
         print("\nИзвлечение релевантных фрагментов...")
