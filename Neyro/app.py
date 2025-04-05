@@ -6,7 +6,19 @@ import os
 import time
 import pandas as pd
 from model import Model
+import fastapi
+from fastapi.middleware.cors import CORSMiddleware
 
+app = fastapi.FastAPI()
+
+# Добавляем middleware для CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*", "http://localhost:8000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class HybridAssistant:
     """
@@ -126,9 +138,6 @@ class HybridAssistant:
         
         return answer_data
 
-import fastapi
-
-app = fastapi.FastAPI()
 assistant = HybridAssistant()
 
 @app.get("/query")
@@ -137,5 +146,4 @@ async def get_answer(query: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7777)
-
+    uvicorn.run("app:app", host="0.0.0.0", port=7777, reload=True)

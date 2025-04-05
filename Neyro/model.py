@@ -2,20 +2,31 @@
 Модуль для поиска релевантных статей в базе знаний Портала поставщиков
 """
 
-import numpy as np
-import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import TruncatedSVD
-import pickle
-import torch
-from sentence_transformers import SentenceTransformer
-import re
-import os
-import time
-from typing import List, Dict, Tuple, Optional, Any, Union
-from transformers import pipeline
-from nltk.tokenize import sent_tokenize, word_tokenize
+# Импорт библиотек для работы с данными и математических операций
+import numpy as np  # Библиотека для научных вычислений и работы с массивами
+import pandas as pd  # Библиотека для обработки и анализа структурированных данных
+
+# Импорт компонентов для векторизации текста и вычисления схожести
+from sklearn.feature_extraction.text import TfidfVectorizer  # Для преобразования текста в TF-IDF векторы
+from sklearn.metrics.pairwise import cosine_similarity  # Для расчета косинусного сходства между векторами
+from sklearn.decomposition import TruncatedSVD  # Для снижения размерности векторов (LSA)
+
+# Импорт библиотек для сохранения/загрузки моделей и работы с файлами
+import pickle  # Для сериализации объектов Python
+import os  # Для работы с файловой системой
+import time  # Для измерения времени выполнения
+
+# Импорт библиотек для работы с нейронными сетями
+import torch  # Фреймворк для глубокого обучения
+from sentence_transformers import SentenceTransformer  # Для создания эмбеддингов предложений
+from transformers import pipeline  # Для работы с предобученными моделями трансформеров
+
+# Импорт инструментов для обработки текста
+import re  # Для работы с регулярными выражениями
+from nltk.tokenize import sent_tokenize, word_tokenize  # Для разбиения текста на предложения и слова
+
+# Импорт типов для аннотаций
+from typing import List, Dict, Tuple, Optional, Any, Union  # Для типизации кода
 
 # Импортируем TextProcessor из utils
 import utils
@@ -555,7 +566,7 @@ class Model:
         query_classification = self.text_processor.classify_query(text)
         
         # Формируем промпт
-        prompt = f"""Пользователь задал вопрос, я тебе даю его вопрос(он может быть с орфографическими ошибками, неточностями и т.д.) и даю фрагменты из нашей базы знаний. тебе нужно соеденить все фрагменты в один ответ на вопрос пользователя, ответ должен ссылаться на источник ифнормации. Информацию можно использовать только из фрагментов, не используй другие источники.
+        prompt = f"""Пользователь задал вопрос, я тебе даю его вопрос(он может быть с орфографическими ошибками, неточностями и т.д.) и даю фрагменты из нашей базы знаний. тебе нужно соеденить все фрагменты в один ответ на вопрос пользователя, ответ должен ссылаться на источник ифнормации и можно немного выдумывать информацию, чтобы пользователь получил информацию, которая ему нужна
 Вопрос пользователя: {text}
 Тип запроса: {query_classification['query_type']}
 Роль пользователя: {query_classification['user_role'] or 'Не определена'}
