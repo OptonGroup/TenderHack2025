@@ -67,7 +67,7 @@ class Model:
         # Инициализация BERT модели для семантического поиска
         if self.use_bert:
             try:
-                self.bert_model = SentenceTransformer('DeepPavlov/rubert-base-cased-sentence')
+                self.bert_model = SentenceTransformer('ai-forever/sbert_large_nlu_ru')
             except Exception as e:
                 print(f"Не удалось загрузить BERT модель: {e}")
                 self.use_bert = False
@@ -113,8 +113,15 @@ class Model:
 
         # Токенизация текстов для BM25
         print("Токенизация текстов для BM25...")
-        # Убираем пустые строки, которые могут возникнуть после preprocess_text
-        tokenized_corpus = [doc.split(" ") for doc in self.dataset['processed_text'] if doc]
+        # --- Сохраняем индексы непустых документов для BM25 ---
+        self.bm25_indices = self.dataset[self.dataset['processed_text'] != ''].index.tolist()
+        if not self.bm25_indices:
+            print("Предупреждение: После предобработки не осталось непустых документов для BM25.")
+            tokenized_corpus = []
+        else:
+            # Убираем пустые строки и токенизируем только непустые
+            tokenized_corpus = [doc.split(" ") for doc in self.dataset.loc[self.bm25_indices, 'processed_text']]
+        # --------------------------------------------------------
 
         # Обучение BM25
         print("Обучение BM25...")
@@ -166,7 +173,7 @@ class Model:
             # Определение, является ли документ об ошибке
             self.dataset.at[idx, 'is_error'] = 1 if classification['query_type'] == 'error' else 0
 
-    def predict(self, text: str) -> np.ndarray:
+    def predict(self, text: str) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
         """
         Вычисление релевантности между запросом и документами
         
@@ -174,7 +181,7 @@ class Model:
         text (str): Текст запроса
             
         Returns:
-            np.ndarray: Массив значений релевантности для каждого документа
+            Tuple[np.ndarray, Dict[str, np.ndarray]]: Массив значений релевантности для каждого документа и словарь промежуточных оценок
         """
         # Классификация запроса
         classification = self.text_processor.classify_query(text)
@@ -197,13 +204,21 @@ class Model:
             bm25_scores = np.zeros(num_docs)
             if self.bm25:
                 try:
-                    bm25_scores = self.bm25.get_scores(tokenized_query)
+                    # Получаем "сырые" оценки только для документов, по которым обучался BM25
+                    bm25_raw_scores = self.bm25.get_scores(tokenized_query)
+                    # Проверяем совпадение размеров и размещаем оценки по сохраненным индексам
+                    if hasattr(self, 'bm25_indices') and len(bm25_raw_scores) == len(self.bm25_indices):
+                        bm25_scores[self.bm25_indices] = bm25_raw_scores
+                    elif hasattr(self, 'bm25_indices'):
+                         print(f"Предупреждение: Несоответствие размеров BM25 scores ({len(bm25_raw_scores)}) и bm25_indices ({len(self.bm25_indices)}). Оценки BM25 не будут применены.")
+                    else:
+                        print("Предупреждение: Отсутствуют индексы bm25_indices. Оценки BM25 не будут применены.")
                 except Exception as e:
                     print(f"Ошибка при расчете BM25 для запроса '{query[:50]}...': {e}")
-                    bm25_scores = np.zeros(num_docs)
+                    # bm25_scores уже инициализирован нулями
             else:
                 print("Предупреждение: Модель BM25 недоступна.")
-                bm25_scores = np.zeros(num_docs)
+                # bm25_scores уже инициализирован нулями
             
             # BERT семантическое сходство (если доступно)
             bert_similarity = np.zeros(num_docs)
@@ -218,17 +233,25 @@ class Model:
                 except Exception as e:
                     print(f"Ошибка при вычислении BERT сходства: {e}")
             
+            # --- Нормализация BM25 с помощью Min-Max Scaling ---
+            min_bm25 = np.min(bm25_scores)
+            max_bm25 = np.max(bm25_scores)
+            if max_bm25 > min_bm25:
+                norm_bm25_scores = (bm25_scores - min_bm25) / (max_bm25 - min_bm25)
+            else:
+                # Если все оценки BM25 одинаковы (или только один документ), 
+                # установим их в 0.5 (или 0, если все = 0)
+                norm_bm25_scores = np.full_like(bm25_scores, 0.5 if max_bm25 > 0 else 0)
+            # ----------------------------------------------------
+
             # Комбинированное сходство с весами
-            # Вес для BERT можно настроить. BM25 обычно дает хороший базовый ранг.
-            bert_weight = 0.2
+            bert_weight = 0.2 # Вернули вес BERT к исходному значению
             if self.use_bert:
-                # Нормализуем BM25 оценки перед комбинированием (простой способ)
-                # Это предотвращает слишком большие значения BM25 от подавления BERT
-                max_bm25 = np.max(bm25_scores) if np.any(bm25_scores) else 1.0
-                norm_bm25_scores = bm25_scores / max_bm25 if max_bm25 > 0 else bm25_scores
+                # Используем УЖЕ нормализованные оценки BM25
                 combined_scores = (1 - bert_weight) * norm_bm25_scores + bert_weight * bert_similarity
             else:
-                combined_scores = bm25_scores # Используем только BM25 если BERT отключен
+                # Если BERT нет, используем нормализованные BM25
+                combined_scores = norm_bm25_scores
             
             # Применение контекстных весов на основе классификации
             scores_with_context = self._apply_context_weights(
@@ -239,18 +262,51 @@ class Model:
                 text
             )
             
+            # --- Сохраняем промежуточные оценки для анализа ---
+            if 'debug_scores' not in locals():
+                debug_scores = {
+                    'bm25': np.zeros((len(query_variants), num_docs)),
+                    'bert': np.zeros((len(query_variants), num_docs)),
+                    'combined_initial': np.zeros((len(query_variants), num_docs)),
+                    'context_weighted': np.zeros((len(query_variants), num_docs)),
+                    'final': np.zeros((len(query_variants), num_docs))
+                }
+            variant_idx = len(all_scores) # Индекс текущего варианта запроса
+            debug_scores['bm25'][variant_idx] = bm25_scores # Сохраняем BM25 до нормализации
+            debug_scores['bert'][variant_idx] = bert_similarity
+            debug_scores['combined_initial'][variant_idx] = combined_scores # Комбинированные до контекста
+            debug_scores['context_weighted'][variant_idx] = scores_with_context # С контекстом, до веса варианта
+            # ---------------------------------------------------
+
             # Применение веса варианта запроса
             final_scores = scores_with_context * weight
             all_scores.append(final_scores)
+            debug_scores['final'][variant_idx] = final_scores # Финальные для этого варианта
         
         # Выбираем максимальное значение релевантности для каждого документа
         if all_scores:
             max_scores = np.max(all_scores, axis=0)
+            # Находим, какой вариант дал максимальную оценку для каждого документа
+            best_variant_indices = np.argmax(all_scores, axis=0)
+            # Собираем лучшие промежуточные оценки для возврата
+            final_debug_scores = {
+                'bm25': debug_scores['bm25'][best_variant_indices, np.arange(num_docs)],
+                'bert': debug_scores['bert'][best_variant_indices, np.arange(num_docs)],
+                'combined_initial': debug_scores['combined_initial'][best_variant_indices, np.arange(num_docs)],
+                'context_weighted': debug_scores['context_weighted'][best_variant_indices, np.arange(num_docs)],
+            }
         else:
             # Возвращаем нули если не было вариантов запроса или произошла ошибка
             max_scores = np.zeros(num_docs)
+            final_debug_scores = {
+                'bm25': np.zeros(num_docs),
+                'bert': np.zeros(num_docs),
+                'combined_initial': np.zeros(num_docs),
+                'context_weighted': np.zeros(num_docs),
+            }
         
-        return max_scores
+        # Возвращаем итоговые очки и промежуточные для отладки
+        return max_scores, final_debug_scores
 
     def _generate_query_variants(self, text: str, classification: Dict[str, Any]) -> List[Tuple[str, float]]:
         """
@@ -314,7 +370,7 @@ class Model:
         text: str = None
     ) -> np.ndarray:
         """
-        Применение весовых коэффициентов на основе контекста запроса
+        Применение весовых коэффициентов на основе контекста запроса (МУЛЬТИПЛИКАТИВНО)
         
         
         similarity (np.ndarray): Исходная релевантность
@@ -328,51 +384,62 @@ class Model:
         """
         weighted_similarity = similarity.copy()
         
+        # --- Мультипликативные факторы для контекста ---
+        type_boost_factor = 0.05
+        role_boost_factor = 0.08
+        component_boost_factor = 0.05
+        # -------------------------------------------
+
         # Применение весов по типу запроса
         for i in range(len(self.dataset)):
             doc_type = self.document_categories.get(i)
             if doc_type == query_type:
-                weighted_similarity[i] += 0.2
+                weighted_similarity[i] *= (1 + type_boost_factor)
         
         # Применение весов по роли пользователя
         if user_role:
             for i in range(len(self.dataset)):
                 doc_role = self.document_roles.get(i)
                 if doc_role == user_role:
-                    weighted_similarity[i] += 0.3
+                    weighted_similarity[i] *= (1 + role_boost_factor)
         
         # Применение весов по компоненту системы
         if component:
             for i in range(len(self.dataset)):
                 doc_topic = self.document_topics.get(i)
                 if doc_topic == component:
-                    weighted_similarity[i] += 0.25
+                    weighted_similarity[i] *= (1 + component_boost_factor)
         
-        # Дополнительная обработка ключевых слов запроса
+        # Дополнительная обработка ключевых слов запроса (Бонус за заголовок)
         if text:
             text_lower = text.lower()
-            keywords = []
+            # Получаем лемматизированные ключевые слова из запроса (без стоп-слов)
+            try:
+                query_tokens = word_tokenize(re.sub(r'[^\w\s]', ' ', text_lower))
+                query_keywords = [
+                    self.text_processor.lemmatize(token) 
+                    for token in query_tokens 
+                    if token not in self.text_processor.stop_words and len(token) > 1
+                ]
+            except Exception as e:
+                print(f"Ошибка токенизации/лемматизации запроса для бонуса заголовка: {e}")
+                query_keywords = []
             
-            
-            # Если найдены ключевые слова, повышаем релевантность документов, содержащих их
-            if keywords:
+            # Если найдены ключевые слова, повышаем релевантность документов, 
+            # заголовок которых содержит эти слова
+            if query_keywords:
+                title_boost_factor = 0.1 # <<<--- Мультипликативный бонус за заголовок ---<<<
                 for i in range(len(self.dataset)):
                     title = self.dataset.iloc[i]['Заголовок статьи'].lower()
-                    desc = str(self.dataset.iloc[i]['Описание']).lower() if not pd.isna(self.dataset.iloc[i]['Описание']) else ""
-                    combined_text = f"{title} {desc}"
-                    
-                    for keyword in keywords:
-                        if keyword in combined_text:
-                            # Увеличиваем вес в зависимости от того, сколько раз ключевое слово 
-                            # встречается в тексте и насколько текст информативен
-                            count = combined_text.count(keyword)
-                            boost = min(0.4, 0.1 * count)  # Максимум +0.4 к релевантности
-                            
-                            # Штраф за слишком короткие описания
-                            content_length = len(desc.split())
-                            
-                            weighted_similarity[i] += boost
+                    # Проверяем наличие любого ключевого слова из запроса в заголовке
+                    if any(keyword in title for keyword in query_keywords):
+                        # Применяем бонус только один раз, даже если несколько слов совпало
+                        if similarity[i] > 0: # Избегаем умножения нуля
+                           weighted_similarity[i] *= (1 + title_boost_factor)
         
+        # Убедимся, что оценки не превышают 1.0 (из-за возможных неточностей float)
+        np.clip(weighted_similarity, 0, 1.0, out=weighted_similarity)
+
         return weighted_similarity
 
     def get_recommendations(self, text: str, top_n: int = 5) -> pd.DataFrame:
@@ -384,10 +451,11 @@ class Model:
         top_n (int): Количество документов для вывода
             
         Returns:
-            pd.DataFrame: Датафрейм с найденными документами и их релевантностью
+            pd.DataFrame: Датафрейм с найденными документами, их итоговой релевантностью 
+                          и промежуточными оценками для отладки.
         """
-        # Вычисление релевантности
-        similarity = self.predict(text)
+        # Вычисление релевантности и получение промежуточных оценок
+        similarity, debug_scores = self.predict(text)
         
         # Получение индексов наиболее релевантных документов
         indices = np.argsort(similarity)[::-1][:top_n]
@@ -396,6 +464,12 @@ class Model:
         result = self.dataset.iloc[indices][['Заголовок статьи', 'Описание']].copy()
         result['релевантность'] = similarity[indices]
         
+        # Добавление промежуточных оценок для отладки
+        result['score_bm25'] = debug_scores['bm25'][indices]
+        result['score_bert'] = debug_scores['bert'][indices]
+        result['score_combined'] = debug_scores['combined_initial'][indices]
+        result['score_context'] = debug_scores['context_weighted'][indices]
+
         # Добавление контекстной информации
         result['тип'] = [self.document_categories.get(i, '') for i in indices]
         result['роль'] = [self.document_roles.get(i, '') for i in indices]
@@ -779,7 +853,7 @@ class Model:
         # Если нужно, восстанавливаем BERT модель
         if model.use_bert:
             try:
-                model.bert_model = SentenceTransformer('DeepPavlov/rubert-base-cased-sentence')
+                model.bert_model = SentenceTransformer('ai-forever/sbert_large_nlu_ru')
             except Exception as e:
                 print(f"Не удалось загрузить BERT модель: {e}")
                 model.use_bert = False
@@ -857,18 +931,29 @@ if __name__ == "__main__":
         
         # Вывод результатов
         print("\nНайденные статьи:")
-        for i, (title, desc, rel, q_type, role, comp) in enumerate(zip(
+        # Расширяем список столбцов для zip
+        cols_to_zip = [
             recommendations['Заголовок статьи'], 
             recommendations['Описание'], 
             recommendations['релевантность'],
             recommendations['тип'],
             recommendations['роль'],
-            recommendations['компонент']
-        )):
+            recommendations['компонент'],
+            recommendations['score_bm25'],
+            recommendations['score_bert'],
+            recommendations['score_combined'],
+            recommendations['score_context']
+        ]
+        # Расширяем переменные в цикле
+        for i, (title, desc, rel, q_type, role, comp, bm25, bert, combined, context) in enumerate(zip(*cols_to_zip)):
+            # Выводим основную информацию и итоговую релевантность
             print(f"{i+1}. {title} (релевантность: {rel:.4f})")
-            print(f"   Тип: {q_type}, Роль: {role}, Компонент: {comp}")
+            # Выводим промежуточные оценки
+            print(f"   Scores: BM25={bm25:.4f}, BERT={bert:.4f}, Combined={combined:.4f}, Context={context:.4f}")
+            # Выводим контекст
+            print(f"   Контекст: Тип={q_type}, Роль={role}, Компонент={comp}")
             if not pd.isna(desc):
-                print(f"   {desc[:100]}..." if len(str(desc)) > 100 else f"   {desc}")
+                print(f"   Описание: {desc[:100]}..." if len(str(desc)) > 100 else f"   Описание: {desc}")
             print()
         
         print(f"Время выполнения: {time.time() - start_time:.2f} с")
