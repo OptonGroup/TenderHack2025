@@ -215,6 +215,15 @@ class ChatHistory(ChatHistoryBase):
         orm_mode = True
 
 
+class ChatHistoryUpdate(BaseModel):
+    """Данные для обновления записи в истории чата"""
+    message: Optional[str] = None
+    message_metadata: Optional[Dict[str, Any]] = None
+    
+    class Config:
+        orm_mode = True
+
+
 class ChatConversation(BaseModel):
     """Модель для получения всей истории конкретного чата"""
     chat_id: str
@@ -247,6 +256,28 @@ class Data(DataBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    
+    class Config:
+        orm_mode = True
+
+
+class ChatRatingBase(BaseModel):
+    """Базовые данные оценки чата"""
+    rating: int = Field(..., ge=1, le=5)  # Оценка от 1 до 5
+    comment: Optional[str] = None
+
+
+class ChatRatingCreate(ChatRatingBase):
+    """Данные для создания оценки чата"""
+    pass
+
+
+class ChatRating(ChatRatingBase):
+    """Полная модель оценки чата"""
+    id: int
+    chat_id: str
+    user_id: int
+    timestamp: datetime
     
     class Config:
         orm_mode = True

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import { colors, shadows, borderRadius } from '../styles/theme.ts';
+import chatService, { UserMessage } from '../api/chatService.ts';
 
 const ChatContainer = styled.div`
   display: flex;
@@ -515,20 +516,33 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({
   };
   
   // Обработчик для отправки рейтинга
-  const handleRatingSubmit = () => {
-    if (onChatFinished) {
-      onChatFinished(rating);
+  const handleRatingSubmit = async () => {
+    try {
+      // Отправляем оценку на сервер
+      await chatService.finishChat({
+        rating: rating,
+        comment: ''  // В будущем можно добавить поле для комментария
+      });
+      
+      // Уведомляем родительский компонент о завершении чата
+      if (onChatFinished) {
+        onChatFinished(rating);
+      }
+      
+      setIsRatingModalOpen(false);
+      
+      // Очищаем историю сообщений после завершения чата
+      setMessages([{
+        id: new Date().getTime().toString(),
+        content: 'Спасибо за оценку! Чем еще я могу вам помочь?',
+        isBot: true,
+        timestamp: new Date(),
+      }]);
+      setRating(0);
+    } catch (error) {
+      console.error('Error submitting rating:', error);
+      alert('Произошла ошибка при отправке оценки. Пожалуйста, попробуйте еще раз.');
     }
-    setIsRatingModalOpen(false);
-    
-    // Очищаем историю сообщений после завершения чата
-    setMessages([{
-      id: new Date().getTime().toString(),
-      content: 'Спасибо за оценку! Чем еще я могу вам помочь?',
-      isBot: true,
-      timestamp: new Date(),
-    }]);
-    setRating(0);
   };
   
   // Обработчик для отмены оценки

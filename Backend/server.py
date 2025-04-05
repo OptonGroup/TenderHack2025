@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Form, Path, Query, Body, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
 from sqlalchemy import func
@@ -21,6 +22,15 @@ from auth import authenticate_user, create_access_token, get_current_active_user
 from load_parquet_to_data import load_parquet_to_data
 
 app = FastAPI(title="TenderHack API", version="1.0.0")
+
+# Добавляем middleware для CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # В продакшене лучше указать конкретные домены
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.post("/token", response_model=schemas.Token)
@@ -515,6 +525,83 @@ async def delete_chat_history(
         "success": True,
         "deleted_messages": deleted,
         "message": f"История чата с ID {chat_id} успешно удалена"
+    }
+
+
+@app.patch("/api/chat-history/{message_id}", response_model=schemas.ChatHistory)
+async def update_chat_message(
+    message_id: int,
+    message_update: schemas.ChatHistoryUpdate,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Обновляет сообщение чата - используется для добавления обратной связи
+    """
+    # Проверяем, существует ли сообщение
+    message = db.query(models.ChatHistory).filter(models.ChatHistory.id == message_id).first()
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Сообщение не найдено"
+        )
+    
+    # Проверяем, принадлежит ли чат текущему пользователю
+    if message.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="У вас нет доступа к этому сообщению"
+        )
+    
+    # Обновляем сообщение
+    update_data = message_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(message, key, value)
+    
+    db.commit()
+    db.refresh(message)
+    
+    return message
+
+
+@app.post("/api/chat-history/{chat_id}/finish", response_model=Dict[str, Any])
+async def finish_chat(
+    chat_id: str,
+    chat_rating: schemas.ChatRatingCreate,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Завершает чат и сохраняет оценку чата
+    """
+    # Проверяем, существует ли чат
+    chat_messages = db.query(models.ChatHistory).filter(
+        models.ChatHistory.chat_id == chat_id,
+        models.ChatHistory.user_id == current_user.id
+    ).all()
+    
+    if not chat_messages:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Чат не найден"
+        )
+    
+    # Создаем запись оценки чата
+    chat_rating_db = models.ChatRating(
+        chat_id=chat_id,
+        user_id=current_user.id,
+        rating=chat_rating.rating,
+        comment=chat_rating.comment
+    )
+    
+    db.add(chat_rating_db)
+    db.commit()
+    
+    return {
+        "status": "success",
+        "message": "Чат успешно завершен и оценка сохранена",
+        "chat_id": chat_id,
+        "rating": chat_rating.rating
     }
 
 

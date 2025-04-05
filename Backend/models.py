@@ -5,16 +5,23 @@ import datetime
 
 
 class User(Base):
+    """
+    Модель пользователя системы
+    """
     __tablename__ = "users"
+    
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    tenders = relationship("Tender", back_populates="creator")
-    bids = relationship("Bid", back_populates="bidder")
-    chat_histories = relationship("ChatHistory", back_populates="user")
+    
+    tenders = relationship("Tender", back_populates="creator", cascade="all, delete-orphan")
+    bids = relationship("Bid", back_populates="bidder", cascade="all, delete-orphan")
+    documents = relationship("Document", back_populates="uploader", cascade="all, delete-orphan")
+    chat_history = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
+    chat_ratings = relationship("ChatRating", back_populates="user", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -75,17 +82,36 @@ class Document(Base):
 
 
 class ChatHistory(Base):
+    """
+    Модель для хранения истории чата
+    """
     __tablename__ = "chat_history"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), index=True)
-    chat_id = Column(String(50), index=True)
-    message = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    chat_id = Column(String, index=True)
+    message = Column(String)
     is_bot = Column(Boolean, default=False)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)
     message_metadata = Column(JSON, nullable=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     
-    user = relationship("User", back_populates="chat_histories")
+    user = relationship("User", back_populates="chat_history")
+
+
+class ChatRating(Base):
+    """
+    Модель для хранения оценок чатов
+    """
+    __tablename__ = "chat_ratings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    chat_id = Column(String, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    rating = Column(Integer)  # Оценка от 1 до 5
+    comment = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    user = relationship("User", back_populates="chat_ratings")
 
 
 class Data(Base):
