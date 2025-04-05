@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import { colors, shadows, borderRadius } from '../styles/theme.ts';
+import { colors, shadows } from '../styles/theme.ts';
 import { Navigate } from 'react-router-dom';
-import DashboardComponent from '../components/admin/DashboardComponent';
-import UsersManagement from '../components/admin/UsersManagement';
-import ChatsManagement from '../components/admin/ChatsManagement';
+import DashboardComponent from '../components/admin/DashboardComponent.tsx';
+import UsersManagement from '../components/admin/UsersManagement.tsx';
+import ChatsManagement from '../components/admin/ChatsManagement.tsx';
 
 // Стили для админ-панели
 const AdminPanelContainer = styled.div`

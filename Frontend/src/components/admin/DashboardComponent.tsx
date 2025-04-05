@@ -9,25 +9,41 @@ const DashboardContainer = styled.div`
   gap: 24px;
 `;
 
-const StatCards = styled.div`
+const Card = styled.div`
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 24px;
+`;
+
+const CardTitle = styled.h3`
+  font-size: 18px;
+  margin-top: 0;
+  margin-bottom: 16px;
+`;
+
+const StatGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 24px;
+  gap: 16px;
 `;
 
 const StatCard = styled.div`
-  background-color: ${colors.white};
-  border-radius: ${borderRadius.medium};
-  box-shadow: ${shadows.small};
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: ${shadows.medium};
-  }
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 16px;
+`;
+
+const StatTitle = styled.div`
+  font-size: 14px;
+  color: #6c757d;
+  margin-bottom: 8px;
+`;
+
+const StatValue = styled.div`
+  font-size: 24px;
+  font-weight: 600;
 `;
 
 const StatIcon = styled.div<{ bgColor: string }>`
@@ -40,18 +56,6 @@ const StatIcon = styled.div<{ bgColor: string }>`
   align-items: center;
   justify-content: center;
   margin-bottom: 16px;
-`;
-
-const StatTitle = styled.div`
-  color: ${colors.paleBlack};
-  font-size: 14px;
-  margin-bottom: 8px;
-`;
-
-const StatValue = styled.div`
-  font-size: 28px;
-  font-weight: 600;
-  margin-bottom: 8px;
 `;
 
 const StatTrend = styled.div<{ trend: 'up' | 'down' | 'neutral' }>`
@@ -377,8 +381,7 @@ const DashboardComponent: React.FC = () => {
   
   return (
     <DashboardContainer>
-      {/* Карточки статистики */}
-      <StatCards>
+      <StatGrid>
         {stats.map(stat => (
           <StatCard key={stat.id}>
             <StatIcon bgColor={stat.color}>
@@ -401,7 +404,7 @@ const DashboardComponent: React.FC = () => {
             </StatTrend>
           </StatCard>
         ))}
-      </StatCards>
+      </StatGrid>
       
       {/* Графики и активность */}
       <Row>

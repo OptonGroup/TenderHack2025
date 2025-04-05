@@ -3,314 +3,111 @@ import styled from 'styled-components';
 import { colors, shadows, borderRadius } from '../../styles/theme.ts';
 
 // Стили для управления чатами
-const ChatsContainer = styled.div`
+const Container = styled.div`
   display: flex;
   flex-direction: column;
+  gap: 24px;
 `;
 
-const ToolBar = styled.div`
+const Card = styled.div`
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 24px;
+`;
+
+const Header = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
-  
-  @media (max-width: 768px) {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
 `;
 
-const SearchContainer = styled.div`
-  flex: 1;
-  max-width: 400px;
-  position: relative;
-  
-  @media (max-width: 768px) {
-    width: 100%;
-    max-width: 100%;
-  }
+const Title = styled.h2`
+  font-size: 20px;
+  margin: 0;
 `;
 
-const SearchInput = styled.input`
-  width: 100%;
-  height: 40px;
-  padding: 0 16px 0 40px;
-  font-size: 14px;
-  border: 1px solid ${colors.grayBlue};
-  border-radius: ${borderRadius.small};
-  
-  &:focus {
-    border-color: ${colors.mainBlue};
-    outline: none;
-  }
-`;
-
-const SearchIcon = styled.div`
-  position: absolute;
-  top: 50%;
-  left: 12px;
-  transform: translateY(-50%);
-  color: ${colors.paleBlack};
-`;
-
-const FiltersContainer = styled.div`
-  display: flex;
-  gap: 12px;
-  
-  @media (max-width: 768px) {
-    width: 100%;
-    overflow-x: auto;
-    padding-bottom: 8px;
-    
-    &::-webkit-scrollbar {
-      height: 4px;
-    }
-    
-    &::-webkit-scrollbar-track {
-      background: ${colors.grayBlue};
-      border-radius: 2px;
-    }
-    
-    &::-webkit-scrollbar-thumb {
-      background: ${colors.mainBlue};
-      border-radius: 2px;
-    }
-  }
-`;
-
-const FilterButton = styled.button<{ active?: boolean }>`
-  padding: 8px 12px;
-  background-color: ${props => props.active ? colors.mainBlue : colors.white};
-  color: ${props => props.active ? colors.white : colors.black};
-  border: 1px solid ${props => props.active ? colors.mainBlue : colors.grayBlue};
-  border-radius: ${borderRadius.small};
+const Button = styled.button`
+  background-color: #3f51b5;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
   font-size: 14px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
+  transition: background-color 0.2s;
   
   &:hover {
-    background-color: ${props => props.active ? colors.seaDark : colors.paleBlue};
+    background-color: #303f9f;
   }
 `;
 
-const ChatsGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 24px;
-  
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-  }
-`;
-
-const ChatCard = styled.div`
-  border: 1px solid ${colors.grayBlue};
-  border-radius: ${borderRadius.medium};
-  overflow: hidden;
-  transition: all 0.2s ease;
-  box-shadow: ${shadows.small};
-  
-  &:hover {
-    box-shadow: ${shadows.medium};
-    transform: translateY(-2px);
-  }
-`;
-
-const ChatHeader = styled.div`
+const ChatList = styled.div`
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 16px;
+`;
+
+const ChatItem = styled.div`
+  display: flex;
   align-items: center;
-  padding: 12px 16px;
-  background-color: ${colors.paleBlue};
-  border-bottom: 1px solid ${colors.grayBlue};
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  transition: box-shadow 0.2s;
+  
+  &:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+`;
+
+const Avatar = styled.div`
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+  font-size: 16px;
+  margin-right: 16px;
+  flex-shrink: 0;
+`;
+
+const ChatInfo = styled.div`
+  flex: 1;
 `;
 
 const ChatTitle = styled.div`
   font-weight: 500;
-  font-size: 15px;
+  margin-bottom: 4px;
 `;
 
-const ChatDate = styled.div`
-  color: ${colors.paleBlack};
-  font-size: 12px;
-`;
-
-const ChatContent = styled.div`
-  padding: 16px;
-`;
-
-const ChatUser = styled.div`
-  display: flex;
-  align-items: center;
-  margin-bottom: 12px;
-`;
-
-const UserAvatar = styled.div`
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: ${colors.grayBlue};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: ${colors.white};
+const LastMessage = styled.div`
   font-size: 14px;
-  font-weight: 500;
+  color: #6c757d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
-const UserDetails = styled.div`
-  margin-left: 12px;
-`;
-
-const UserName = styled.div`
-  font-weight: 500;
-  font-size: 14px;
-`;
-
-const UserEmail = styled.div`
-  color: ${colors.paleBlack};
+const ChatTime = styled.div`
   font-size: 12px;
-`;
-
-const ChatStats = styled.div`
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
-`;
-
-const StatItem = styled.div`
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-  background-color: ${colors.lightBg};
-  border-radius: ${borderRadius.small};
-`;
-
-const StatValue = styled.div`
-  font-weight: 500;
-  font-size: 16px;
-`;
-
-const StatLabel = styled.div`
-  color: ${colors.paleBlack};
-  font-size: 12px;
-`;
-
-const ChatPreview = styled.div`
-  border: 1px solid ${colors.grayBlue};
-  border-radius: ${borderRadius.small};
-  padding: 12px;
-  font-size: 14px;
-  max-height: 100px;
-  overflow-y: auto;
-  margin-bottom: 16px;
-`;
-
-const ChatFooter = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-`;
-
-const ChatActions = styled.div`
-  display: flex;
-  gap: 8px;
+  color: #6c757d;
+  margin-left: 16px;
 `;
 
 const ActionButton = styled.button`
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
+  background: none;
   border: none;
-  background-color: ${colors.paleBlue};
-  color: ${colors.paleBlack};
+  color: #3f51b5;
   cursor: pointer;
-  transition: all 0.2s ease;
+  margin-left: 16px;
   
   &:hover {
-    background-color: ${colors.grayBlue};
-    color: ${colors.black};
-  }
-`;
-
-const Badge = styled.span<{ type: 'active' | 'completed' | 'flagged' }>`
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 8px;
-  border-radius: ${borderRadius.small};
-  font-size: 12px;
-  font-weight: 500;
-  
-  background-color: ${props => {
-    switch (props.type) {
-      case 'active': return `${colors.success}20`;
-      case 'completed': return `${colors.mainBlue}20`;
-      case 'flagged': return `${colors.error}20`;
-      default: return `${colors.mainBlue}20`;
-    }
-  }};
-  
-  color: ${props => {
-    switch (props.type) {
-      case 'active': return colors.success;
-      case 'completed': return colors.mainBlue;
-      case 'flagged': return colors.error;
-      default: return colors.mainBlue;
-    }
-  }};
-  
-  &::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    margin-right: 4px;
-    background-color: ${props => {
-      switch (props.type) {
-        case 'active': return colors.success;
-        case 'completed': return colors.mainBlue;
-        case 'flagged': return colors.error;
-        default: return colors.mainBlue;
-      }
-    }};
-  }
-`;
-
-const Pagination = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 36px;
-  
-  @media (max-width: 768px) {
-    flex-direction: column;
-    gap: 16px;
-  }
-`;
-
-const PaginationInfo = styled.div`
-  font-size: 14px;
-  color: ${colors.paleBlack};
-  
-  @media (max-width: 768px) {
-    order: 2;
-  }
-`;
-
-const PaginationControls = styled.div`
-  display: flex;
-  gap: 8px;
-  
-  @media (max-width: 768px) {
-    order: 1;
-    width: 100%;
-    justify-content: center;
+    text-decoration: underline;
   }
 `;
 
@@ -592,145 +389,38 @@ const ChatsManagement: React.FC = () => {
   
   if (loading) {
     return (
-      <ChatsContainer>
+      <Container>
         <div style={{ textAlign: 'center', padding: '32px' }}>
           Загрузка чатов...
         </div>
-      </ChatsContainer>
+      </Container>
     );
   }
   
   return (
-    <ChatsContainer>
-      <ToolBar>
-        <SearchContainer>
-          <SearchIcon>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M15.5 14H14.71L14.43 13.73C15.41 12.59 16 11.11 16 9.5C16 5.91 13.09 3 9.5 3C5.91 3 3 5.91 3 9.5C3 13.09 5.91 16 9.5 16C11.11 16 12.59 15.41 13.73 14.43L14 14.71V15.5L19 20.49L20.49 19L15.5 14ZM9.5 14C7.01 14 5 11.99 5 9.5C5 7.01 7.01 5 9.5 5C11.99 5 14 7.01 14 9.5C14 11.99 11.99 14 9.5 14Z" fill="currentColor"/>
-            </svg>
-          </SearchIcon>
-          <SearchInput
-            type="text"
-            placeholder="Поиск чатов..."
-            value={searchTerm}
-            onChange={handleSearch}
-          />
-        </SearchContainer>
+    <Container>
+      <Card>
+        <Header>
+          <Title>Управление чатами</Title>
+          <Button>Экспорт истории</Button>
+        </Header>
         
-        <FiltersContainer>
-          <FilterButton 
-            active={statusFilter === 'all'}
-            onClick={() => handleFilterChange('all')}
-          >
-            Все
-          </FilterButton>
-          <FilterButton 
-            active={statusFilter === 'active'}
-            onClick={() => handleFilterChange('active')}
-          >
-            Активные
-          </FilterButton>
-          <FilterButton 
-            active={statusFilter === 'completed'}
-            onClick={() => handleFilterChange('completed')}
-          >
-            Завершенные
-          </FilterButton>
-          <FilterButton 
-            active={statusFilter === 'flagged'}
-            onClick={() => handleFilterChange('flagged')}
-          >
-            Помеченные
-          </FilterButton>
-        </FiltersContainer>
-      </ToolBar>
-      
-      {paginatedChats.length > 0 ? (
-        <ChatsGrid>
+        <ChatList>
           {paginatedChats.map(chat => (
-            <ChatCard key={chat.id}>
-              <ChatHeader>
-                <ChatTitle>{chat.title}</ChatTitle>
-                <Badge type={getStatusBadgeType(chat.status)}>
-                  {getStatusText(chat.status)}
-                </Badge>
-              </ChatHeader>
-              
-              <ChatContent>
-                <ChatUser>
-                  <UserAvatar>{chat.user.name.charAt(0)}</UserAvatar>
-                  <UserDetails>
-                    <UserName>{chat.user.name}</UserName>
-                    <UserEmail>{chat.user.email}</UserEmail>
-                  </UserDetails>
-                </ChatUser>
-                
-                <ChatStats>
-                  <StatItem>
-                    <StatValue>{chat.messagesCount}</StatValue>
-                    <StatLabel>Сообщений</StatLabel>
-                  </StatItem>
-                  <StatItem>
-                    <StatValue>{chat.queriesCount}</StatValue>
-                    <StatLabel>Запросов</StatLabel>
-                  </StatItem>
-                </ChatStats>
-                
-                <ChatPreview>
-                  {chat.lastMessage}
-                </ChatPreview>
-                
-                <ChatFooter>
-                  <ChatDate>{formatDate(chat.date)}</ChatDate>
-                  <ChatActions>
-                    <ActionButton title="Просмотреть" onClick={() => handleViewChat(chat.id)}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12C2.73 16.39 7 19.5 12 19.5C17 19.5 21.27 16.39 23 12C21.27 7.61 17 4.5 12 4.5ZM12 17C9.24 17 7 14.76 7 12C7 9.24 9.24 7 12 7C14.76 7 17 9.24 17 12C17 14.76 14.76 17 12 17ZM12 9C10.34 9 9 10.34 9 12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12C15 10.34 13.66 9 12 9Z" fill="currentColor"/>
-                      </svg>
-                    </ActionButton>
-                    <ActionButton 
-                      title={chat.status === 'flagged' ? 'Снять отметку' : 'Отметить'} 
-                      onClick={() => handleFlagChat(chat.id, chat.status)}
-                    >
-                      {chat.status === 'flagged' ? (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M14.43 10L12 2L9.57 10H2L8.18 14.41L5.83 22L12 17.31L18.18 22L15.83 14.41L22 10H14.43Z" fill="currentColor"/>
-                        </svg>
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M22 9.24L14.81 8.62L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27L18.18 21L16.55 13.97L22 9.24ZM12 15.4L8.24 17.67L9.24 13.39L5.92 10.51L10.3 10.13L12 6.1L13.71 10.14L18.09 10.52L14.77 13.4L15.77 17.68L12 15.4Z" fill="currentColor"/>
-                        </svg>
-                      )}
-                    </ActionButton>
-                    <ActionButton title="Экспортировать" onClick={() => handleExportChat(chat.id)}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M19 9H15V3H9V9H5L12 16L19 9ZM5 18V20H19V18H5Z" fill="currentColor"/>
-                      </svg>
-                    </ActionButton>
-                  </ChatActions>
-                </ChatFooter>
-              </ChatContent>
-            </ChatCard>
+            <ChatItem key={chat.id}>
+              <Avatar>{chat.user.name.charAt(0)}</Avatar>
+              <ChatInfo>
+                <ChatTitle>{chat.user.name}</ChatTitle>
+                <LastMessage>{chat.lastMessage}</LastMessage>
+              </ChatInfo>
+              <ChatTime>{formatDate(chat.date)}</ChatTime>
+              <ActionButton>Открыть</ActionButton>
+              <ActionButton>Архивировать</ActionButton>
+            </ChatItem>
           ))}
-        </ChatsGrid>
-      ) : (
-        <div style={{ textAlign: 'center', padding: '32px' }}>
-          Чаты не найдены
-        </div>
-      )}
-      
-      {paginatedChats.length > 0 && (
-        <Pagination>
-          <PaginationInfo>
-            Показано {(currentPage - 1) * chatsPerPage + 1}-{Math.min(currentPage * chatsPerPage, filteredChats.length)} из {filteredChats.length} чатов
-          </PaginationInfo>
-          
-          <PaginationControls>
-            {renderPaginationButtons()}
-          </PaginationControls>
-        </Pagination>
-      )}
-    </ChatsContainer>
+        </ChatList>
+      </Card>
+    </Container>
   );
 };
 
