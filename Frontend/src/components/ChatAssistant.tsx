@@ -231,6 +231,127 @@ const HistoryButton = styled.button`
   }
 `;
 
+// Добавляем новые стили для кнопки "Завершить чат" и модальное окно оценки
+const ActionButtons = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-right: auto;
+  
+  @media (max-width: 480px) {
+    gap: 8px;
+  }
+`;
+
+const FinishChatButton = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 0 16px;
+  background-color: ${colors.orange};
+  border: none;
+  border-radius: ${borderRadius.small};
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  
+  &:hover {
+    background-color: #e06010;
+  }
+  
+  @media (max-width: 480px) {
+    height: 40px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+`;
+
+const ModalOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+`;
+
+const RatingModal = styled.div`
+  background-color: ${colors.white};
+  border-radius: ${borderRadius.medium};
+  box-shadow: ${shadows.medium};
+  padding: 24px;
+  width: 90%;
+  max-width: 450px;
+  text-align: center;
+`;
+
+const ModalTitle = styled.h3`
+  margin-top: 0;
+  margin-bottom: 24px;
+  font-size: 20px;
+  color: ${colors.black};
+`;
+
+const StarsContainer = styled.div`
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+`;
+
+const Star = styled.button<{ filled: boolean }>`
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: ${props => props.filled ? colors.orange : colors.grayBlue};
+  font-size: 32px;
+  transition: transform 0.2s, color 0.2s;
+  
+  &:hover {
+    transform: scale(1.1);
+    color: ${colors.orange};
+  }
+`;
+
+const ModalButtons = styled.div`
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+`;
+
+const SubmitButton = styled.button`
+  background-color: ${colors.mainBlue};
+  color: white;
+  border: none;
+  border-radius: ${borderRadius.small};
+  padding: 12px 24px;
+  font-size: 16px;
+  cursor: pointer;
+  
+  &:hover {
+    background-color: ${colors.seaDark};
+  }
+`;
+
+const CancelButton = styled.button`
+  background-color: ${colors.paleBlue};
+  color: ${colors.black};
+  border: none;
+  border-radius: ${borderRadius.small};
+  padding: 12px 24px;
+  font-size: 16px;
+  cursor: pointer;
+  
+  &:hover {
+    background-color: ${colors.grayBlue};
+  }
+`;
+
 interface Message {
   id: string;
   content: string;
@@ -244,6 +365,7 @@ interface ChatAssistantProps {
   onMessageSent?: (message: string, response: string) => void;
   onToggleHistory?: () => void;
   onRatingChange?: (messageId: string, rating: 'positive' | 'negative' | null) => void;
+  onChatFinished?: (rating: number) => void;
   selectedChatId?: string | null;
 }
 
@@ -251,6 +373,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({
   onMessageSent, 
   onToggleHistory,
   onRatingChange,
+  onChatFinished,
   selectedChatId
 }) => {
   const [messages, setMessages] = useState<Message[]>([
@@ -264,6 +387,9 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Добавляем новые состояния для модального окна оценки
+  const [isRatingModalOpen, setIsRatingModalOpen] = useState(false);
+  const [rating, setRating] = useState(0);
 
   useEffect(() => {
     scrollToBottom();
@@ -378,6 +504,39 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({
     }
   };
 
+  // Обработчик для кнопки "Завершить чат"
+  const handleFinishChat = () => {
+    setIsRatingModalOpen(true);
+  };
+  
+  // Обработчик для выбора рейтинга
+  const handleRatingSelect = (value: number) => {
+    setRating(value);
+  };
+  
+  // Обработчик для отправки рейтинга
+  const handleRatingSubmit = () => {
+    if (onChatFinished) {
+      onChatFinished(rating);
+    }
+    setIsRatingModalOpen(false);
+    
+    // Очищаем историю сообщений после завершения чата
+    setMessages([{
+      id: new Date().getTime().toString(),
+      content: 'Спасибо за оценку! Чем еще я могу вам помочь?',
+      isBot: true,
+      timestamp: new Date(),
+    }]);
+    setRating(0);
+  };
+  
+  // Обработчик для отмены оценки
+  const handleRatingCancel = () => {
+    setIsRatingModalOpen(false);
+    setRating(0);
+  };
+
   return (
     <ChatContainer>
       <ChatHeader>
@@ -452,6 +611,14 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({
       </ChatMessages>
       
       <ChatInputContainer>
+        <ActionButtons>
+          <HistoryButton onClick={handleHistoryButtonClick}>
+            История
+          </HistoryButton>
+          <FinishChatButton onClick={handleFinishChat}>
+            Завершить чат
+          </FinishChatButton>
+        </ActionButtons>
         <form onSubmit={handleSubmit} style={{ display: 'flex', width: '100%' }}>
           <ChatInput 
             type="text" 
@@ -468,6 +635,33 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({
           </SendButton>
         </form>
       </ChatInputContainer>
+      
+      {/* Модальное окно для оценки */}
+      {isRatingModalOpen && (
+        <ModalOverlay>
+          <RatingModal>
+            <ModalTitle>Оцените качество обслуживания</ModalTitle>
+            <StarsContainer>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <Star 
+                  key={star} 
+                  filled={star <= rating}
+                  onClick={() => handleRatingSelect(star)}
+                >
+                  {star <= rating 
+                    ? <span>★</span>
+                    : <span>☆</span>
+                  }
+                </Star>
+              ))}
+            </StarsContainer>
+            <ModalButtons>
+              <CancelButton onClick={handleRatingCancel}>Отмена</CancelButton>
+              <SubmitButton onClick={handleRatingSubmit} disabled={rating === 0}>Отправить</SubmitButton>
+            </ModalButtons>
+          </RatingModal>
+        </ModalOverlay>
+      )}
     </ChatContainer>
   );
 };
@@ -476,6 +670,7 @@ ChatAssistant.defaultProps = {
   onMessageSent: undefined,
   onToggleHistory: undefined,
   onRatingChange: undefined,
+  onChatFinished: undefined,
   selectedChatId: null
 };
 

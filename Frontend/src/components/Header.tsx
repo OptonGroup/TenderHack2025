@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import { colors } from '../styles/theme.ts';
+import { Link } from 'react-router-dom';
 
 const HeaderContainer = styled.header`
   display: flex;
@@ -179,7 +180,7 @@ const UserName = styled.span`
   font-weight: 500;
 `;
 
-const LoginButton = styled.button`
+const LoginButton = styled(Link)`
   background-color: ${colors.red};
   color: white;
   border-radius: 4px;
@@ -188,6 +189,8 @@ const LoginButton = styled.button`
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s ease;
+  text-decoration: none;
+  display: inline-block;
   
   &:hover {
     background-color: #c02719;
@@ -250,8 +253,8 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, userName, notificationCount
       <Logo>
         <LogoImage />
         <LogoText>
-          <LogoTitle>Портал</LogoTitle>
-          <LogoSubtitle>поставщиков</LogoSubtitle>
+          <LogoTitle>ТендерАИ</LogoTitle>
+          <LogoSubtitle>Тендерный помощник</LogoSubtitle>
         </LogoText>
       </Logo>
       
@@ -262,26 +265,18 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, userName, notificationCount
       </BurgerMenu>
       
       <Nav isOpen={isMenuOpen}>
-        <NavItem href="#">Меню</NavItem>
-        <NavItem href="#">Каталог продукции</NavItem>
-        <NavItem href="#">Закупки</NavItem>
-        <NavItem href="#">Московская область</NavItem>
-        
-        <SearchBox>
-          <SearchIcon>
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12.5 11H11.71L11.43 10.73C12.41 9.59 13 8.11 13 6.5C13 2.91 10.09 0 6.5 0C2.91 0 0 2.91 0 6.5C0 10.09 2.91 13 6.5 13C8.11 13 9.59 12.41 10.73 11.43L11 11.71V12.5L16 17.49L17.49 16L12.5 11ZM6.5 11C4.01 11 2 8.99 2 6.5C2 4.01 4.01 2 6.5 2C8.99 2 11 4.01 11 6.5C11 8.99 8.99 11 6.5 11Z" fill="currentColor"/>
-            </svg>
-          </SearchIcon>
-        </SearchBox>
+        <NavItem href="#">Главная</NavItem>
+        <NavItem href="#">О сервисе</NavItem>
+        <NavItem href="#">Тарифы</NavItem>
+        <NavItem href="#">Поддержка</NavItem>
       </Nav>
       
       <UserSection>
         {isLoggedIn ? (
           <>
             <NotificationIcon>
-              <svg width="18" height="20" viewBox="0 0 18 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9 20C10.1 20 11 19.1 11 18H7C7 19.1 7.9 20 9 20ZM18 16V17H0V16L2 14V9C2 5.9 4 3.2 7 2.3V2C7 0.9 7.9 0 9 0C10.1 0 11 0.9 11 2V2.3C14 3.2 16 5.9 16 9V14L18 16ZM14 9C14 6.2 11.8 4 9 4C6.2 4 4 6.2 4 9V15H14V9Z" fill="currentColor"/>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.9 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="currentColor"/>
               </svg>
               {notificationCount > 0 && <NotificationBadge>{notificationCount}</NotificationBadge>}
             </NotificationIcon>
@@ -291,7 +286,7 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, userName, notificationCount
             </UserProfile>
           </>
         ) : (
-          <LoginButton>Зарегистрироваться</LoginButton>
+          <LoginButton to="/register">Зарегистрироваться</LoginButton>
         )}
       </UserSection>
     </HeaderContainer>
