@@ -39,6 +39,8 @@ class Model:
     
     Использует комбинацию TF-IDF и BERT для достижения наилучших результатов.
     """
+    CANDIDATES_K = 100 # Количество кандидатов для этапа переранжирования
+
     def __init__(self, dataset_path: str, use_bert: bool = True, use_llm: bool = True):
         """
         Инициализация модели поиска
@@ -195,18 +197,27 @@ class Model:
         # Вычисление релевантности для всех вариантов запроса
         all_scores = []
         num_docs = len(self.dataset) # Количество документов
+        # Структура для хранения промежуточных оценок кандидатов для каждого варианта
+        all_candidate_data_variants = [] 
         
+        # Вычисляем эмбеддинг запроса один раз, если используем BERT
+        query_embedding = None
+        if self.use_bert and self.bert_model:
+            try:
+                query_embedding = self.bert_model.encode(text) # Используем исходный текст для BERT
+            except Exception as e:
+                print(f"Ошибка при кодировании запроса BERT: {e}")
+                self.use_bert = False # Отключаем BERT для этого запроса, если кодирование не удалось
+
         for query, weight in query_variants:
             # Токенизация предобработанного запроса
             tokenized_query = query.split(" ")
             
-            # Расчет BM25 оценок
+            # ===== Этап 1: Retrieval (BM25) =====
             bm25_scores = np.zeros(num_docs)
             if self.bm25:
                 try:
-                    # Получаем "сырые" оценки только для документов, по которым обучался BM25
                     bm25_raw_scores = self.bm25.get_scores(tokenized_query)
-                    # Проверяем совпадение размеров и размещаем оценки по сохраненным индексам
                     if hasattr(self, 'bm25_indices') and len(bm25_raw_scores) == len(self.bm25_indices):
                         bm25_scores[self.bm25_indices] = bm25_raw_scores
                     elif hasattr(self, 'bm25_indices'):
@@ -215,86 +226,117 @@ class Model:
                         print("Предупреждение: Отсутствуют индексы bm25_indices. Оценки BM25 не будут применены.")
                 except Exception as e:
                     print(f"Ошибка при расчете BM25 для запроса '{query[:50]}...': {e}")
-                    # bm25_scores уже инициализирован нулями
             else:
                 print("Предупреждение: Модель BM25 недоступна.")
-                # bm25_scores уже инициализирован нулями
-            
-            # BERT семантическое сходство (если доступно)
-            bert_similarity = np.zeros(num_docs)
-            if self.use_bert and self.bert_embeddings is not None:
+
+            # --- Отбор кандидатов ---
+            candidate_indices_unsorted = np.argsort(bm25_scores)
+            candidate_indices = candidate_indices_unsorted[-self.CANDIDATES_K:][::-1]
+            # Отбрасываем кандидатов с нулевой BM25 оценкой (если такие есть)
+            non_zero_bm25_mask = bm25_scores[candidate_indices] > 0
+            candidate_indices = candidate_indices[non_zero_bm25_mask]
+            if len(candidate_indices) == 0:
+                print(f"Предупреждение: Не найдено кандидатов с BM25 > 0 для варианта запроса: '{query[:50]}...'")
+                all_scores.append(np.zeros(num_docs))
+                all_candidate_data_variants.append(None) # Добавляем placeholder
+                continue # Переходим к следующему варианту
+                
+            candidate_bm25_scores = bm25_scores[candidate_indices]
+
+            # ===== Этап 2: Reranking (только для кандидатов) =====
+            # ======================================
+
+            # --- BERT семантическое сходство (только для кандидатов) ---
+            bert_similarity_candidates = np.zeros(len(candidate_indices))
+            if self.use_bert and self.bert_embeddings is not None and query_embedding is not None:
                 try:
-                    # Используем исходный текст для BERT для лучшего семантического понимания
-                    query_embedding = self.bert_model.encode(text)
+                    # Извлекаем эмбеддинги только для кандидатов
+                    candidate_bert_embeddings = self.bert_embeddings[candidate_indices]
+                    # Вычисляем сходство
                     bert_similarity = cosine_similarity(
                         [query_embedding],
-                        self.bert_embeddings
+                        candidate_bert_embeddings
                     )[0]
+                    # Проверка на случай возврата некорректной формы
+                    if bert_similarity.shape == (len(candidate_indices),):
+                        bert_similarity_candidates = bert_similarity
+                    else:
+                        print(f"Предупреждение: Неожиданная форма BERT similarity: {bert_similarity.shape}")
                 except Exception as e:
-                    print(f"Ошибка при вычислении BERT сходства: {e}")
+                    print(f"Ошибка при вычислении BERT сходства для кандидатов: {e}")
             
-            # --- Нормализация BM25 с помощью Min-Max Scaling ---
-            min_bm25 = np.min(bm25_scores)
-            max_bm25 = np.max(bm25_scores)
-            if max_bm25 > min_bm25:
-                norm_bm25_scores = (bm25_scores - min_bm25) / (max_bm25 - min_bm25)
+            # --- Нормализация BM25 (только для кандидатов) ---
+            min_bm25_cand = np.min(candidate_bm25_scores)
+            max_bm25_cand = np.max(candidate_bm25_scores)
+            if max_bm25_cand > min_bm25_cand:
+                norm_bm25_scores_candidates = (candidate_bm25_scores - min_bm25_cand) / (max_bm25_cand - min_bm25_cand)
             else:
-                # Если все оценки BM25 одинаковы (или только один документ), 
-                # установим их в 0.5 (или 0, если все = 0)
-                norm_bm25_scores = np.full_like(bm25_scores, 0.5 if max_bm25 > 0 else 0)
-            # ----------------------------------------------------
+                # Если все оценки BM25 у кандидатов одинаковы
+                norm_bm25_scores_candidates = np.full_like(candidate_bm25_scores, 0.5 if max_bm25_cand > 0 else 0)
 
-            # Комбинированное сходство с весами
-            bert_weight = 0.2 # Вернули вес BERT к исходному значению
+            # --- Комбинированное сходство (только для кандидатов) ---
+            bert_weight = 0.2 
             if self.use_bert:
-                # Используем УЖЕ нормализованные оценки BM25
-                combined_scores = (1 - bert_weight) * norm_bm25_scores + bert_weight * bert_similarity
+                combined_scores_candidates = (1 - bert_weight) * norm_bm25_scores_candidates + bert_weight * bert_similarity_candidates
             else:
-                # Если BERT нет, используем нормализованные BM25
-                combined_scores = norm_bm25_scores
-            
-            # Применение контекстных весов на основе классификации
-            scores_with_context = self._apply_context_weights(
-                combined_scores,
+                combined_scores_candidates = norm_bm25_scores_candidates
+
+            # --- Применение контекстных весов (только для кандидатов) ---
+            scores_with_context_candidates = self._apply_context_weights(
+                combined_scores_candidates, # Оценки только кандидатов
                 query_type,
                 user_role,
                 component,
-                text
+                text,
+                indices=candidate_indices # Передаем индексы кандидатов
             )
-            
-            # --- Сохраняем промежуточные оценки для анализа ---
-            if 'debug_scores' not in locals():
-                debug_scores = {
-                    'bm25': np.zeros((len(query_variants), num_docs)),
-                    'bert': np.zeros((len(query_variants), num_docs)),
-                    'combined_initial': np.zeros((len(query_variants), num_docs)),
-                    'context_weighted': np.zeros((len(query_variants), num_docs)),
-                    'final': np.zeros((len(query_variants), num_docs))
-                }
-            variant_idx = len(all_scores) # Индекс текущего варианта запроса
-            debug_scores['bm25'][variant_idx] = bm25_scores # Сохраняем BM25 до нормализации
-            debug_scores['bert'][variant_idx] = bert_similarity
-            debug_scores['combined_initial'][variant_idx] = combined_scores # Комбинированные до контекста
-            debug_scores['context_weighted'][variant_idx] = scores_with_context # С контекстом, до веса варианта
-            # ---------------------------------------------------
 
-            # Применение веса варианта запроса
-            final_scores = scores_with_context * weight
-            all_scores.append(final_scores)
-            debug_scores['final'][variant_idx] = final_scores # Финальные для этого варианта
-        
+            # Применение веса варианта запроса и отбор кандидатов
+            final_scores_variant = np.zeros(num_docs) # Начинаем с нулей
+            candidate_final_scores = scores_with_context_candidates * weight # Применяем вес варианта
+            final_scores_variant[candidate_indices] = candidate_final_scores # Ставим оценки только для кандидатов
+            
+            all_scores.append(final_scores_variant)
+            
+            # Сохраняем промежуточные данные кандидатов для этого варианта (для отладки)
+            variant_candidate_data = {
+                'indices': candidate_indices.copy(),
+                'bm25': candidate_bm25_scores.copy(),
+                'bert': bert_similarity_candidates.copy(),
+                'combined': combined_scores_candidates.copy(),
+                'context': scores_with_context_candidates.copy(),
+                'final_cand_score': candidate_final_scores.copy()
+            }
+            all_candidate_data_variants.append(variant_candidate_data)
+
         # Выбираем максимальное значение релевантности для каждого документа
         if all_scores:
             max_scores = np.max(all_scores, axis=0)
             # Находим, какой вариант дал максимальную оценку для каждого документа
             best_variant_indices = np.argmax(all_scores, axis=0)
-            # Собираем лучшие промежуточные оценки для возврата
-            final_debug_scores = {
-                'bm25': debug_scores['bm25'][best_variant_indices, np.arange(num_docs)],
-                'bert': debug_scores['bert'][best_variant_indices, np.arange(num_docs)],
-                'combined_initial': debug_scores['combined_initial'][best_variant_indices, np.arange(num_docs)],
-                'context_weighted': debug_scores['context_weighted'][best_variant_indices, np.arange(num_docs)],
+            
+            # Собираем промежуточные оценки для отладки (только для документов с ненулевой итоговой оценкой)
+            final_debug_scores = { 
+                'bm25': np.zeros(num_docs),
+                'bert': np.zeros(num_docs),
+                'combined_initial': np.zeros(num_docs),
+                'context_weighted': np.zeros(num_docs)
             }
+            active_doc_indices = np.where(max_scores > 0)[0]
+            for doc_idx in active_doc_indices:
+                variant_idx = best_variant_indices[doc_idx]
+                candidate_data = all_candidate_data_variants[variant_idx]
+                if candidate_data is not None: # Проверка на случай пропуска варианта
+                    try:
+                        # Находим локальный индекс документа среди кандидатов этого варианта
+                        local_idx = np.where(candidate_data['indices'] == doc_idx)[0][0]
+                        # Заполняем debug оценки
+                        final_debug_scores['bm25'][doc_idx] = candidate_data['bm25'][local_idx]
+                        final_debug_scores['bert'][doc_idx] = candidate_data['bert'][local_idx]
+                        final_debug_scores['combined_initial'][doc_idx] = candidate_data['combined'][local_idx]
+                        final_debug_scores['context_weighted'][doc_idx] = candidate_data['context'][local_idx]
+                    except IndexError: # Если документ не найден среди кандидатов (не должно происходить, но для безопасности)
+                        print(f"Предупреждение: Документ {doc_idx} не найден среди кандидатов варианта {variant_idx}, хотя имеет max_score > 0.")
         else:
             # Возвращаем нули если не было вариантов запроса или произошла ошибка
             max_scores = np.zeros(num_docs)
@@ -302,7 +344,7 @@ class Model:
                 'bm25': np.zeros(num_docs),
                 'bert': np.zeros(num_docs),
                 'combined_initial': np.zeros(num_docs),
-                'context_weighted': np.zeros(num_docs),
+                'context_weighted': np.zeros(num_docs)
             }
         
         # Возвращаем итоговые очки и промежуточные для отладки
@@ -367,7 +409,8 @@ class Model:
         query_type: str, 
         user_role: Optional[str], 
         component: Optional[str],
-        text: str = None
+        text: str = None,
+        indices: Optional[np.ndarray] = None
     ) -> np.ndarray:
         """
         Применение весовых коэффициентов на основе контекста запроса (МУЛЬТИПЛИКАТИВНО)
@@ -378,38 +421,47 @@ class Model:
         user_role (Optional[str]): Роль пользователя
         component (Optional[str]): Компонент системы
         text (str, optional): Текст запроса для дополнительной обработки
+        indices (Optional[np.ndarray], optional): Индексы документов, для которых применяются веса. 
+                                                Если None, применяются ко всем.
             
         Returns:
             np.ndarray: Модифицированная релевантность с учетом контекста
         """
-        weighted_similarity = similarity.copy()
-        
+        # Если индексы не переданы, работаем со всеми документами
+        if indices is None:
+            indices_to_process = np.arange(len(self.dataset))
+            weighted_similarity = similarity.copy()
+        else:
+            # Работаем только с переданными индексами
+            indices_to_process = indices
+            # similarity здесь уже содержит оценки только для кандидатов
+            weighted_similarity = similarity.copy() 
+
         # --- Мультипликативные факторы для контекста ---
         type_boost_factor = 0.05
         role_boost_factor = 0.08
         component_boost_factor = 0.05
         # -------------------------------------------
 
-        # Применение весов по типу запроса
-        for i in range(len(self.dataset)):
-            doc_type = self.document_categories.get(i)
+        # Применение весов (итерируемся по индексам из similarity/indices_to_process)
+        for k, doc_idx in enumerate(indices_to_process):
+            # Применение весов по типу запроса
+            doc_type = self.document_categories.get(doc_idx)
             if doc_type == query_type:
-                weighted_similarity[i] *= (1 + type_boost_factor)
-        
-        # Применение весов по роли пользователя
-        if user_role:
-            for i in range(len(self.dataset)):
-                doc_role = self.document_roles.get(i)
+                weighted_similarity[k] *= (1 + type_boost_factor)
+            
+            # Применение весов по роли пользователя
+            if user_role:
+                doc_role = self.document_roles.get(doc_idx)
                 if doc_role == user_role:
-                    weighted_similarity[i] *= (1 + role_boost_factor)
-        
-        # Применение весов по компоненту системы
-        if component:
-            for i in range(len(self.dataset)):
-                doc_topic = self.document_topics.get(i)
+                    weighted_similarity[k] *= (1 + role_boost_factor)
+            
+            # Применение весов по компоненту системы
+            if component:
+                doc_topic = self.document_topics.get(doc_idx)
                 if doc_topic == component:
-                    weighted_similarity[i] *= (1 + component_boost_factor)
-        
+                    weighted_similarity[k] *= (1 + component_boost_factor)
+
         # Дополнительная обработка ключевых слов запроса (Бонус за заголовок)
         if text:
             text_lower = text.lower()
@@ -425,17 +477,19 @@ class Model:
                 print(f"Ошибка токенизации/лемматизации запроса для бонуса заголовка: {e}")
                 query_keywords = []
             
-            # Если найдены ключевые слова, повышаем релевантность документов, 
+            # Если найдены ключевые слова, повышаем релевантность документов,
             # заголовок которых содержит эти слова
             if query_keywords:
                 title_boost_factor = 0.1 # <<<--- Мультипликативный бонус за заголовок ---<<<
-                for i in range(len(self.dataset)):
-                    title = self.dataset.iloc[i]['Заголовок статьи'].lower()
+                # Снова итерируемся по индексам
+                for k, doc_idx in enumerate(indices_to_process):
+                    title = self.dataset.iloc[doc_idx]['Заголовок статьи'].lower()
                     # Проверяем наличие любого ключевого слова из запроса в заголовке
                     if any(keyword in title for keyword in query_keywords):
                         # Применяем бонус только один раз, даже если несколько слов совпало
-                        if similarity[i] > 0: # Избегаем умножения нуля
-                           weighted_similarity[i] *= (1 + title_boost_factor)
+                        # Используем исходную similarity[k] для проверки > 0, чтобы избежать умножения нуля
+                        if k < len(similarity) and similarity[k] > 0: 
+                           weighted_similarity[k] *= (1 + title_boost_factor)
         
         # Убедимся, что оценки не превышают 1.0 (из-за возможных неточностей float)
         np.clip(weighted_similarity, 0, 1.0, out=weighted_similarity)
