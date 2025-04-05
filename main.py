@@ -1,23 +1,17 @@
-# Use a pipeline as a high-level helper
-import os
-from transformers import pipeline
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
 
-# Настройка пути кэша моделей в директории проекта
-os.environ["TRANSFORMERS_CACHE"] = "./model_cache"
-os.makedirs("./model_cache", exist_ok=True)
+model_name = "deepseek-ai/deepseek-llm-7b-chat"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
+model.generation_config = GenerationConfig.from_pretrained(model_name)
+model.generation_config.pad_token_id = model.generation_config.eos_token_id
 
-pipe = pipeline("text2text-generation", model="google/flan-t5-large")
+messages = [
+    {"role": "user", "content": "Who are you?"}
+]
+input_tensor = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt")
+outputs = model.generate(input_tensor.to(model.device), max_new_tokens=100)
 
-# Пример использования модели
-question = "Переведи с английского на русский: Hello world!"
-result = pipe(question)
-print(result[0]["generated_text"])
-
-# Пример с параметрами генерации
-result = pipe(
-    "Какая столица России?",
-    max_length=50,
-    temperature=0.7,
-    do_sample=True
-)
-print(result[0]["generated_text"])
+result = tokenizer.decode(outputs[0][input_tensor.shape[1]:], skip_special_tokens=True)
+print(result)
