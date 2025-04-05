@@ -7,105 +7,135 @@ import time
 import pandas as pd
 from model import Model
 
-def main():
+
+class HybridAssistant:
     """
-    Основная функция для запуска приложения
+    Класс для работы с гибридной моделью ответов на вопросы пользователей.
+    Предназначен для интеграции в бэкенд-приложения.
     """
-    model_path = "model.pkl"
-    dataset_path = "docs/dataset.parquet"
-    retrain = False
     
-    print("Запуск гибридной модели для ответов на вопросы пользователей...")
-    print("=" * 80)
+    def __init__(self, model_path="model.pkl", dataset_path="docs/dataset.parquet", retrain=False):
+        """
+        Инициализация ассистента
+        
+        Args:
+            model_path (str): Путь к файлу модели
+            dataset_path (str): Путь к файлу с данными
+            retrain (bool): Флаг необходимости переобучения модели
+        """
+        self.model_path = model_path
+        self.dataset_path = dataset_path
+        self.model = None
+        self.is_initialized = False
+        
+        # Инициализация модели при создании объекта
+        if retrain:
+            self.retrain_model()
+        else:
+            self.initialize_model()
     
-    # Проверка наличия файлов
-    if not os.path.exists(dataset_path):
-        print(f"ОШИБКА: Файл с данными {dataset_path} не найден!")
-        return
-    
-    start_time = time.time()
-    
-    # Загрузка или создание модели
-    if retrain or not os.path.exists(model_path):
-        print(f"Создание и обучение новой модели...")
+    def initialize_model(self):
+        """
+        Инициализация модели из существующего файла
+        
+        Returns:
+            bool: Успешность инициализации
+        """
+        if not os.path.exists(self.dataset_path):
+            raise FileNotFoundError(f"Файл с данными {self.dataset_path} не найден!")
+        
+        start_time = time.time()
+        
+        if not os.path.exists(self.model_path):
+            return self.retrain_model()
+        
         try:
-            model = Model(dataset_path, use_bert=True, use_llm=True)
-            print(f"Время загрузки данных: {time.time() - start_time:.2f} с")
-            
-            # Обучение модели
-            model_train_start = time.time()
-            model.train()
-            print(f"Время обучения модели: {time.time() - model_train_start:.2f} с")
-            
-            # Сохранение модели
-            model.save_model(model_path)
-            print(f"Модель сохранена в {model_path}")
+            self.model = Model.load_model(self.model_path)
+            self.is_initialized = True
+            return True
         except Exception as e:
-            print(f"Ошибка при создании модели: {e}")
-            return
-    else:
-        try:
-            print(f"Загрузка существующей модели из {model_path}")
-            model = Model.load_model(model_path)
-            print(f"Время загрузки модели: {time.time() - start_time:.2f} с")
-        except Exception as e:
-            print(f"Ошибка при загрузке модели: {e}")
-            print("Попробуйте установить retrain=True для создания новой модели")
-            return
+            self.is_initialized = False
+            raise RuntimeError(f"Ошибка при загрузке модели: {e}")
     
-    print("\nМодель успешно загружена!")
-    print("=" * 80)
-    print("Для выхода введите 'exit' или 'выход'")
-    
-    # Основной цикл приложения
-    while True:
+    def retrain_model(self):
+        """
+        Создание и обучение новой модели
+        
+        Returns:
+            bool: Успешность обучения
+        """
+        if not os.path.exists(self.dataset_path):
+            raise FileNotFoundError(f"Файл с данными {self.dataset_path} не найден!")
+        
+        start_time = time.time()
+        
         try:
-            # Получение запроса от пользователя
-            query = input("\nВведите ваш вопрос: ")
-            
-            # Проверка на выход
-            if query.lower() in ['exit', 'выход', 'quit', 'q']:
-                print("Завершение работы...")
-                break
-                
-            if not query.strip():
-                continue
-                
-            # Замер времени
-            query_start_time = time.time()
-            
-            # Анализ запроса
-            query_analysis = model.text_processor.classify_query(query)
-            print(f"\nАнализ запроса:")
-            print(f"  Тип запроса: {query_analysis['query_type']}")
-            if query_analysis['user_role']:
-                print(f"  Роль пользователя: {query_analysis['user_role']}")
-            if query_analysis['component']:
-                print(f"  Компонент: {query_analysis['component']}")
-            
-            # Генерация ответа с использованием гибридного подхода
-            print("\nПоиск релевантной информации...")
-            answer_data = model.generate_answer(query, top_n=5, top_k_fragments=7)
-            
-            # Вывод ответа
-            print("\nОТВЕТ:\n" + "=" * 50)
-            print(answer_data["answer"])
-            print("=" * 50)
-            
-            # Вывод источников
-            if answer_data["sources"]:
-                print("\nИсточники:")
-                for i, source in enumerate(answer_data["sources"], 1):
-                    print(f"{i}. {source}")
-            
-            # Вывод времени выполнения
-            print(f"\nВремя выполнения: {time.time() - query_start_time:.2f} с")
-            
-        except KeyboardInterrupt:
-            print("\nРабота программы прервана пользователем")
-            break
+            self.model = Model(self.dataset_path, use_bert=True, use_llm=True)
+            self.model.train()
+            self.model.save_model(self.model_path)
+            self.is_initialized = True
+            return True
         except Exception as e:
-            print(f"\nПроизошла ошибка: {e}")
+            self.is_initialized = False
+            raise RuntimeError(f"Ошибка при создании модели: {e}")
+    
+    def analyze_query(self, query):
+        """
+        Анализ запроса пользователя
+        
+        Args:
+            query (str): Запрос пользователя
+            
+        Returns:
+            dict: Результаты анализа запроса
+        """
+        if not self.is_initialized:
+            raise RuntimeError("Модель не инициализирована")
+        
+        return self.model.text_processor.classify_query(query)
+    
+    def get_answer(self, query, top_n=5, top_k_fragments=7):
+        """
+        Получение ответа на запрос пользователя
+        
+        Args:
+            query (str): Запрос пользователя
+            top_n (int): Количество релевантных документов для поиска
+            top_k_fragments (int): Количество фрагментов для анализа
+            
+        Returns:
+            dict: Ответ на запрос с метаданными
+        """
+        if not self.is_initialized:
+            raise RuntimeError("Модель не инициализирована")
+        
+        if not query.strip():
+            return {"answer": "Пустой запрос", "fragments": [], "sources": []}
+        
+        start_time = time.time()
+        
+        # Анализ запроса
+        query_analysis = self.analyze_query(query)
+        
+        # Генерация ответа
+        answer_data = self.model.generate_answer(query, top_n=top_n, top_k_fragments=top_k_fragments)
+        
+        # Добавляем время выполнения и анализ запроса
+        answer_data["execution_time"] = time.time() - start_time
+        answer_data["query_analysis"] = query_analysis
+        
+        return answer_data
+
+import fastapi
+
+app = fastapi.FastAPI()
+assistant = HybridAssistant()
+
+@app.get("/query")
+async def get_answer(query: str):
+    return assistant.get_answer(query)
 
 if __name__ == "__main__":
-    main() 
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=7777)
+

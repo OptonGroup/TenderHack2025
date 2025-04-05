@@ -80,7 +80,7 @@ class Model:
         self.llm = None
         if self.use_llm:
             try:
-                self.llm = pipeline("text-generation", model="microsoft/Phi-4-mini-instruct", trust_remote_code=True, max_length=2048)
+                self.llm = pipeline("text-generation", model="microsoft/Phi-3-mini-4k-instruct", trust_remote_code=True)
                 print("LLM модель успешно загружена")
             except Exception as e:
                 print(f"Не удалось загрузить LLM модель: {e}")
@@ -572,7 +572,7 @@ class Model:
     
     def generate_answer(self, text: str, top_n: int = 5, top_k_fragments: int = 7) -> Dict[str, Any]:
         """
-        Генерация ответа на запрос пользователя с использованием LLM
+        Генерация ответа на запрос пользователя
         
         text (str): Текст запроса
         top_n (int): Количество статей для анализа
@@ -581,12 +581,8 @@ class Model:
         Returns:
             Dict[str, Any]: Словарь с ответом и дополнительной информацией
         """
-        if not self.use_llm or not self.llm:
-            return {
-                "answer": "LLM не доступна. Используйте релевантные статьи для получения ответа.",
-                "fragments": [],
-                "sources": []
-            }
+        # Отключаем LLM из-за проблем совместимости
+        self.use_llm = False
         
         # Извлекаем релевантные фрагменты
         fragments = self.extract_relevant_fragments(text, top_n=top_n, top_k_fragments=top_k_fragments)
@@ -599,21 +595,38 @@ class Model:
                 "sources": []
             }
         
-        # Создаем промпт для LLM
-        prompt = self.create_prompt_for_llm(text, fragments)
+        # Классификация запроса
+        query_classification = self.text_processor.classify_query(text)
         
-        # Генерируем ответ
+        # Генерируем ответ на основе релевантных фрагментов без использования LLM
         try:
-            messages = [
-                {"role": "user", "content": prompt}
-            ]
-            
-            response = self.llm(messages, max_new_tokens=2048, do_sample=True, temperature=0.7, return_full_text=False)
-            answer = response[0]['generated_text']
-            
-            # Извлекаем только ответ модели (убираем промпт)
-            if len(answer) > len(prompt):
-                answer = answer[len(prompt):].strip()
+            # Составляем ответ из наиболее релевантных фрагментов
+            if fragments:
+                # Берем самый релевантный фрагмент как основу ответа
+                top_fragment = fragments[0]['fragment']
+                title = fragments[0]['title']
+                
+                # Формируем вступление в зависимости от типа запроса
+                intro = ""
+                if query_classification['query_type'] == 'error':
+                    intro = "Для решения вашей проблемы рекомендуется: "
+                elif query_classification['query_type'] == 'instruction':
+                    intro = "Инструкция по вашему запросу: "
+                else:
+                    intro = "По вашему запросу найдена следующая информация: "
+                
+                # Формируем основную часть ответа
+                answer = f"{intro}\n\n{top_fragment}\n\nИсточник: {title}"
+                
+                # Если есть дополнительные фрагменты, добавляем их
+                if len(fragments) > 1:
+                    answer += "\n\nДополнительная информация:"
+                    
+                    for i in range(1, min(3, len(fragments))):
+                        fragment = fragments[i]
+                        answer += f"\n\n{fragment['fragment']}\nИсточник: {fragment['title']}"
+            else:
+                answer = "К сожалению, не удалось сформировать ответ на ваш запрос."
             
             # Получаем источники (уникальные заголовки статей)
             sources = list(set([fragment['title'] for fragment in fragments]))
@@ -625,8 +638,14 @@ class Model:
             }
         except Exception as e:
             print(f"Ошибка при генерации ответа: {e}")
+            # В случае ошибки возвращаем первый фрагмент как ответ
+            if fragments:
+                answer = f"По вашему запросу: \n\n{fragments[0]['fragment']}\n\nИсточник: {fragments[0]['title']}"
+            else:
+                answer = "Произошла ошибка при обработке вашего запроса."
+                
             return {
-                "answer": "Произошла ошибка при генерации ответа. Пожалуйста, обратитесь к релевантным статьям.",
+                "answer": answer,
                 "fragments": [f['fragment'] for f in fragments],
                 "sources": list(set([fragment['title'] for fragment in fragments]))
             }
@@ -689,7 +708,7 @@ class Model:
         # Если нужно, восстанавливаем LLM
         if model.use_llm:
             try:
-                model.llm = pipeline("text-generation", model="microsoft/Phi-4-mini-instruct", trust_remote_code=True, max_length=2048)
+                model.llm = pipeline("text-generation", model="microsoft/Phi-3-mini-4k-instruct", trust_remote_code=True)
                 print("LLM модель успешно загружена")
             except Exception as e:
                 print(f"Не удалось загрузить LLM модель: {e}")
