@@ -1,3 +1,181 @@
+/**
+ * API клиент для работы с серверным API
+ */
+
+class ApiClient {
+    constructor() {
+        this.baseUrl = window.location.origin;
+        this.tokenKey = 'token';
+        this.cachedData = new Map(); // Кэш для ответов API
+    }
+
+    /**
+     * Получение авторизационного токена из хранилища
+     */
+    getToken() {
+        // Пробуем получить из sessionStorage
+        let token = sessionStorage.getItem(this.tokenKey);
+        if (token) return token;
+        
+        // Если нет в sessionStorage, пробуем из cookie
+        return this.getCookie(this.tokenKey);
+    }
+
+    /**
+     * Получение значения cookie по имени
+     */
+    getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+    }
+
+    /**
+     * Выполнение HTTP запроса к API
+     */
+    async fetchApi(endpoint, options = {}) {
+        const token = this.getToken();
+        
+        const defaultOptions = {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            credentials: 'same-origin'
+        };
+        
+        const fetchOptions = { ...defaultOptions, ...options };
+        
+        try {
+            console.log(`[API] Запрос к ${endpoint}`, fetchOptions);
+            
+            const response = await fetch(`${this.baseUrl}${endpoint}`, fetchOptions);
+            
+            // Проверяем статус ответа
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`API ошибка ${response.status}: ${errorText || 'Нет данных'}`);
+            }
+            
+            // Если ответ пустой, возвращаем null
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                const text = await response.text();
+                return text || null;
+            }
+            
+            // Парсим JSON ответ
+            const data = await response.json();
+            console.log(`[API] Успешный ответ от ${endpoint}:`, data);
+            return data;
+        } catch (error) {
+            console.error(`[API] Ошибка при запросе к ${endpoint}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Очистка кэша для конкретного URL или всего кэша
+     * @param {String} url - URL для очистки или null для очистки всего кэша
+     */
+    clearCache(url = null) {
+        if (url) {
+            console.log(`[API] Очистка кэша для ${url}`);
+            this.cachedData.delete(url);
+        } else {
+            console.log('[API] Полная очистка кэша');
+            this.cachedData.clear();
+        }
+    }
+
+    /**
+     * Получение списка заявок на поддержку
+     * @param {Boolean} useCache - Использовать кэш или выполнить свежий запрос
+     */
+    async getSupportRequests(useCache = false) {
+        const url = '/api/support-requests';
+        console.log(`[API] Запрос заявок оператора (useCache=${useCache})`);
+        
+        // Если разрешено использование кэша и в кэше есть свежие данные (не старше 10 секунд)
+        if (useCache && this.cachedData.has(url)) {
+            const cachedItem = this.cachedData.get(url);
+            const now = Date.now();
+            if (now - cachedItem.timestamp < 10000) { // 10 секунд
+                console.log('[API] Возвращаем закэшированные заявки оператора', cachedItem.data);
+                return cachedItem.data;
+            }
+        }
+        
+        // Выполняем запрос и кэшируем результат
+        try {
+            const result = await this.fetchApi(url);
+            // Кэшируем результат
+            this.cachedData.set(url, {
+                timestamp: Date.now(),
+                data: result
+            });
+            console.log('[API] Обновлен кэш заявок оператора', result);
+            return result;
+        } catch (error) {
+            console.error('[API] Ошибка при получении заявок оператора', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Пометить заявку на поддержку как решенную
+     */
+    async resolveSupportRequest(chatId) {
+        return this.fetchApi(`/api/support-requests/${chatId}/resolve`, {
+            method: 'POST'
+        });
+    }
+    
+    /**
+     * Получение данных о текущем пользователе
+     */
+    async getCurrentUser() {
+        return this.fetchApi('/api/users/me');
+    }
+    
+    /**
+     * Получение тестовых заявок для отладки
+     */
+    getTestSupportRequests() {
+        return [
+            {
+                chat_id: 'test-1',
+                message_id: 1,
+                created_at: new Date().toISOString(),
+                request_time: new Date().toISOString(),
+                message_count: 5,
+                user: {
+                    id: 1,
+                    username: 'Тестовый пользователь 1',
+                    email: 'test1@example.com'
+                }
+            },
+            {
+                chat_id: 'test-2',
+                message_id: 2,
+                created_at: new Date(Date.now() - 3600000).toISOString(), // 1 час назад
+                request_time: new Date(Date.now() - 3600000).toISOString(),
+                message_count: 12,
+                user: {
+                    id: 2,
+                    username: 'Тестовый пользователь 2',
+                    email: 'test2@example.com'
+                }
+            }
+        ];
+    }
+}
+
+// Создаем глобальный экземпляр API клиента
+window.apiClient = new ApiClient();
+
 // Константы для API
 const API_BASE_URL = '/api';
 
@@ -415,7 +593,7 @@ class API {
         }
     }
 
-    async sendMessage(chatId, message, isBot = false) {
+    async sendMessage(chatId, message, isBot = false, metadata = null) {
         if (!this.token) {
             console.log('sendMessage: Нет токена, возвращаем заглушку');
             return { 
@@ -423,7 +601,8 @@ class API {
                 chat_id: chatId, 
                 message: message, 
                 is_bot: isBot, 
-                timestamp: new Date().toISOString() 
+                timestamp: new Date().toISOString(),
+                message_metadata: metadata ? JSON.stringify(metadata) : null
             };
         }
 
@@ -437,12 +616,26 @@ class API {
                         chat_id: chatId, 
                         message: message, 
                         is_bot: isBot, 
-                        timestamp: new Date().toISOString() 
+                        timestamp: new Date().toISOString(),
+                        message_metadata: metadata ? JSON.stringify(metadata) : null
                     };
                 }
             }
 
             console.log('sendMessage: Отправка сообщения в чат', chatId);
+            const messageData = {
+                chat_id: chatId,
+                user_id: this.user.id,
+                message: message,
+                is_bot: isBot
+            };
+            
+            // Добавляем метаданные, если они предоставлены
+            if (metadata) {
+                messageData.message_metadata = JSON.stringify(metadata);
+                console.log('sendMessage: Добавлены метаданные:', metadata);
+            }
+            
             const response = await fetch(API_ENDPOINTS.CHAT_HISTORY, {
                 method: 'POST',
                 headers: {
@@ -451,12 +644,7 @@ class API {
                     'Accept': 'application/json'
                 },
                 credentials: 'same-origin',
-                body: JSON.stringify({
-                    chat_id: chatId,
-                    user_id: this.user.id,
-                    message: message,
-                    is_bot: isBot
-                })
+                body: JSON.stringify(messageData)
             });
 
             console.log('sendMessage: Ответ сервера:', response.status);
@@ -472,7 +660,8 @@ class API {
                         chat_id: chatId, 
                         message: message, 
                         is_bot: isBot, 
-                        timestamp: new Date().toISOString() 
+                        timestamp: new Date().toISOString(),
+                        message_metadata: metadata ? JSON.stringify(metadata) : null
                     };
                 }
                 
@@ -489,14 +678,15 @@ class API {
                 chat_id: chatId, 
                 message: message, 
                 is_bot: isBot, 
-                timestamp: new Date().toISOString() 
+                timestamp: new Date().toISOString(),
+                message_metadata: metadata ? JSON.stringify(metadata) : null
             };
         }
     }
 
     // Алиас для метода sendMessage для совместимости
-    async sendChatMessage(chatId, message, isBot = false) {
-        return this.sendMessage(chatId, message, isBot);
+    async sendChatMessage(chatId, message, isBot = false, metadata = null) {
+        return this.sendMessage(chatId, message, isBot, metadata);
     }
 
     async finishChat(chatId, rating, comment = '') {
@@ -660,18 +850,27 @@ class API {
      * @returns {Promise<Array>} Список заявок
      */
     async getSupportRequests() {
-        if (!this.isLoggedIn()) {
+        console.group('API: getSupportRequests');
+        
+        if (!this.token) {
             console.error('Попытка получить заявки на помощь без авторизации');
+            console.groupEnd();
             throw new Error('Требуется авторизация');
         }
 
         try {
+            console.log('Текущий токен:', this.token ? `${this.token.substring(0, 15)}...` : 'отсутствует');
+            console.log('Текущий пользователь:', this.user ? this.user.username : 'не авторизован');
+            console.log('Роль пользователя:', this.user ? this.user.role : 'неизвестна');
             console.log('Запрашиваем список заявок на помощь оператора');
+            
             const response = await fetch('/api/support-requests', {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${this.token}`,
+                    'Accept': 'application/json'
                 },
+                credentials: 'same-origin'
             });
 
             console.log('Ответ API заявок, статус:', response.status);
@@ -679,6 +878,8 @@ class API {
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error('Ошибка получения заявок, текст ответа:', errorText);
+                console.groupEnd();
+                
                 try {
                     const errorData = JSON.parse(errorText);
                     throw new Error(errorData.detail || `Ошибка HTTP! Статус: ${response.status}`);
@@ -688,10 +889,29 @@ class API {
             }
 
             const result = await response.json();
-            console.log('Получены заявки на помощь, количество:', result.length, 'Данные:', result);
+            console.log('Получены заявки на помощь, количество:', result.length);
+            
+            // Подробная информация о каждой заявке
+            if (result && result.length > 0) {
+                console.log('Подробная информация о заявках:');
+                result.forEach((req, index) => {
+                    console.log(`Заявка #${index + 1}:`, {
+                        chat_id: req.chat_id,
+                        user: req.user,
+                        message_count: req.message_count,
+                        created_at: req.created_at,
+                        message_id: req.message_id
+                    });
+                });
+            } else {
+                console.log('Заявки отсутствуют. Проверьте /api/debug/operator-requests для отладки');
+            }
+            
+            console.groupEnd();
             return result;
         } catch (error) {
             console.error('Ошибка при получении заявок на помощь:', error);
+            console.groupEnd();
             throw error;
         }
     }
@@ -702,22 +922,41 @@ class API {
      * @returns {Promise<Object>} Результат операции
      */
     async resolveSupportRequest(chatId) {
+        if (!this.token) {
+            console.error('Попытка разрешить заявку без авторизации');
+            throw new Error('Требуется авторизация');
+        }
+        
         try {
+            console.log(`Отправляем запрос на разрешение заявки с chat_id=${chatId}`);
             const response = await fetch(`/api/support-requests/${chatId}/resolve`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
                 },
+                credentials: 'same-origin'
             });
             
+            console.log('Ответ API разрешения заявки, статус:', response.status);
+            
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `HTTP error! Status: ${response.status}`);
+                const errorText = await response.text();
+                console.error('Ошибка разрешения заявки, текст ответа:', errorText);
+                try {
+                    const errorData = JSON.parse(errorText);
+                    throw new Error(errorData.detail || `Ошибка HTTP! Статус: ${response.status}`);
+                } catch (e) {
+                    throw new Error(`Ошибка разрешения заявки: ${response.status} - ${errorText || 'Нет ответа'}`);
+                }
             }
             
-            return await response.json();
+            const result = await response.json();
+            console.log('Результат разрешения заявки:', result);
+            return result;
         } catch (error) {
-            console.error('Error resolving support request:', error);
+            console.error('Ошибка при разрешении заявки:', error);
             throw error;
         }
     }

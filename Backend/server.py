@@ -1068,7 +1068,10 @@ async def call_operator(
             is_bot=True,
             message_metadata=metadata_json
         )
+        
+        # Add the message to the database session
         db.add(system_message)
+        # Commit the transaction
         db.commit()
         
         # Проверяем, что запрос действительно попал в базу
@@ -1133,6 +1136,9 @@ async def get_support_requests(
     Получить активные заявки на помощь от пользователей (для операторов и администраторов)
     """
     try:
+        # PRINT: Начало получения заявок
+        print(f"[DEBUG] Запрос заявок на помощь от {current_user.username} (роль: {current_user.role})")
+        
         # Проверяем, есть ли у пользователя права на доступ к заявкам
         if current_user.role not in ['admin', 'operator']:
             logger.warning(f"Пользователь {current_user.username} (роль: {current_user.role}) пытается получить заявки на помощь")
@@ -1143,55 +1149,72 @@ async def get_support_requests(
         
         logger.info(f"Запрос заявок на помощь от пользователя {current_user.username} (роль: {current_user.role})")
         
-        # Находим все сообщения с флагом оператора, которые не разрешены
+        # Находим все сообщения с метаданными о запросах оператора, используя запрос
+        # с более точными условиями
         operator_messages = db.query(models.ChatHistory).filter(
             models.ChatHistory.message_metadata.isnot(None)
-        ).order_by(models.ChatHistory.created_at.desc()).limit(100).all()
+        ).order_by(models.ChatHistory.timestamp.desc()).all()
         
-        logger.info(f"Найдено {len(operator_messages)} сообщений с метаданными")
+        print(f"[DEBUG] Найдено {len(operator_messages)} сообщений с метаданными")
         
         active_requests = []
         chat_ids_processed = set()
         
         for message in operator_messages:
             try:
+                # Пропускаем сообщения без метаданных
                 if not message.message_metadata:
                     continue
                 
-                metadata = json.loads(message.message_metadata)
-                
-                # Проверка, является ли сообщение запросом оператора и не разрешено
-                is_operator_request = metadata.get("operator_request") is True
-                is_resolved = metadata.get("resolved") is True
-                
-                logger.debug(f"Сообщение ID {message.id}, chat_id {message.chat_id}: operator_request={is_operator_request}, resolved={is_resolved}")
-                
-                if is_operator_request and not is_resolved and message.chat_id not in chat_ids_processed:
-                    # Находим пользователя, создавшего запрос
+                try:
+                    # Парсим метаданные
+                    metadata = json.loads(message.message_metadata)
+                    
+                    # PRINT: Выводим информацию о метаданных каждого сообщения
+                    print(f"[DEBUG] Метаданные сообщения {message.id}: {metadata}")
+                    
+                    # Проверяем, что это запрос оператора и он не решен
+                    is_operator_request = metadata.get("operator_request") is True
+                    is_resolved = metadata.get("resolved") is True
+                    
+                    print(f"[DEBUG] Сообщение {message.id}: operator_request={is_operator_request}, resolved={is_resolved}")
+                    
+                    # Пропускаем сообщения, которые не являются активными запросами оператора
+                    if not is_operator_request or is_resolved:
+                        continue
+                    
+                    # Пропускаем дубликаты чатов
+                    if message.chat_id in chat_ids_processed:
+                        continue
+                    
+                    # Находим пользователя, связанного с запросом
                     user_id = metadata.get("requestor_id")
                     user = db.query(models.User).filter(models.User.id == user_id).first() if user_id else None
                     
                     if not user:
-                        # Если не найден пользователь в метаданных, ищем по связанным сообщениям
+                        # Ищем пользователя по сообщениям в чате
                         chat_user_message = db.query(models.ChatHistory).filter(
                             models.ChatHistory.chat_id == message.chat_id,
                             models.ChatHistory.user_id.isnot(None),
-                            models.ChatHistory.is_bot == False
+                            models.ChatHistory.is_bot.is_(False)
                         ).first()
                         
                         if chat_user_message:
                             user_id = chat_user_message.user_id
                             user = db.query(models.User).filter(models.User.id == user_id).first()
                     
-                    # Считаем количество сообщений в чате
+                    print(f"[DEBUG] Пользователь для заявки: {user.username if user else 'Не найден'}")
+                    
+                    # Считаем сообщения в чате
                     message_count = db.query(models.ChatHistory).filter(
                         models.ChatHistory.chat_id == message.chat_id
                     ).count()
                     
+                    # Формируем данные запроса
                     request_data = {
                         "chat_id": message.chat_id,
                         "message_id": message.id,
-                        "created_at": message.created_at.isoformat(),
+                        "created_at": message.timestamp.isoformat(),
                         "request_time": metadata.get("request_time"),
                         "message_count": message_count,
                         "user": {
@@ -1207,16 +1230,28 @@ async def get_support_requests(
                     
                     active_requests.append(request_data)
                     chat_ids_processed.add(message.chat_id)
+                    print(f"[DEBUG] Добавлен активный запрос: chat_id={message.chat_id}")
+                    
+                except json.JSONDecodeError as e:
+                    print(f"[DEBUG] Ошибка парсинга JSON метаданных для сообщения {message.id}: {e}")
+                    continue
             except Exception as e:
-                logger.error(f"Ошибка при обработке сообщения {message.id}: {e}")
+                print(f"[DEBUG] Ошибка при обработке сообщения {message.id}: {e}")
         
-        logger.info(f"Найдено {len(active_requests)} активных заявок")
+        print(f"[DEBUG] Найдено {len(active_requests)} активных заявок, данные: {active_requests}")
         
         # Сортируем по времени создания (сначала новые)
         active_requests.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         
+        # Логируем первый запрос для отладки
+        if active_requests:
+            print(f"[DEBUG] Пример первого запроса: {active_requests[0]}")
+        
+        print(f"\n\n********** КОЛИЧЕСТВО АКТИВНЫХ ЗАЯВОК: {len(active_requests)} **********\n\n")
+        
         return active_requests
     except Exception as e:
+        print(f"[DEBUG] ОШИБКА при получении заявок: {e}")
         logger.error(f"Ошибка при получении заявок на помощь: {e}")
         return JSONResponse(
             status_code=500,
@@ -1392,6 +1427,88 @@ async def update_user_role(
     db.refresh(user)
     
     return user
+
+@app.post("/api/support-requests/{chat_id}/resolve")
+async def resolve_support_request(
+    chat_id: str,
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Отметить заявку на поддержку как решенную
+    """
+    try:
+        # Проверяем, что пользователь имеет нужную роль
+        if current_user.role not in ['admin', 'operator']:
+            logger.warning(f"Пользователь {current_user.username} без необходимых прав пытается разрешить заявку")
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Нет прав на разрешение заявок"}
+            )
+        
+        logger.info(f"Запрос на разрешение заявки {chat_id} от пользователя {current_user.username}")
+        
+        # Находим все сообщения с запросом оператора в этом чате
+        operator_messages = db.query(models.ChatHistory).filter(
+            models.ChatHistory.chat_id == chat_id,
+            models.ChatHistory.message_metadata.isnot(None)
+        ).all()
+        
+        updated_count = 0
+        
+        for message in operator_messages:
+            try:
+                if not message.message_metadata:
+                    continue
+                
+                metadata = json.loads(message.message_metadata)
+                
+                # Проверяем, является ли сообщение запросом оператора и не разрешено
+                if metadata.get("operator_request") is True and metadata.get("resolved") is not True:
+                    # Обновляем метаданные - помечаем как разрешенное
+                    metadata["resolved"] = True
+                    metadata["resolved_by"] = current_user.id
+                    metadata["resolved_by_username"] = current_user.username
+                    metadata["resolved_at"] = datetime.utcnow().isoformat()
+                    
+                    # Сохраняем обновленные метаданные
+                    message.message_metadata = json.dumps(metadata)
+                    updated_count += 1
+                    
+                    logger.info(f"Запрос оператора в сообщении {message.id} отмечен как разрешенный")
+            except Exception as e:
+                logger.error(f"Ошибка при обработке сообщения {message.id}: {e}")
+        
+        # Если обновлены какие-либо сообщения, сохраняем изменения
+        if updated_count > 0:
+            # Добавляем системное сообщение о решении
+            system_message = models.ChatHistory(
+                chat_id=chat_id,
+                user_id=None,  # Системное сообщение
+                message=f"Запрос оператора разрешен пользователем {current_user.username}.",
+                is_bot=True,
+                message_metadata=json.dumps({
+                    "type": "system",
+                    "resolved_by": current_user.id,
+                    "resolved_by_username": current_user.username,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            )
+            db.add(system_message)
+            db.commit()
+            
+            logger.info(f"Заявка {chat_id} успешно разрешена, обновлено {updated_count} сообщений")
+            return {"success": True, "message": "Заявка успешно отмечена как решенная"}
+        else:
+            logger.warning(f"Заявка {chat_id} не найдена или уже разрешена")
+            return {"success": False, "message": "Заявка не найдена или уже разрешена"}
+    except Exception as e:
+        logger.error(f"Ошибка при разрешении заявки {chat_id}: {e}")
+        db.rollback()
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Ошибка при разрешении заявки: {str(e)}"}
+        )
 
 if __name__ == '__main__':
     uvicorn.run(

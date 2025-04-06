@@ -313,6 +313,41 @@
             max-width: 90%;
         }
     }
+    
+    /* Добавляем стили для режима оператора */
+    .operator-mode-badge {
+        background-color: #dc3545;
+        color: white;
+        padding: 5px 10px;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        margin-left: 10px;
+    }
+    
+    .message-operator .message-content {
+        background-color: #fd7e14;
+        color: white;
+        border-top-left-radius: 0;
+    }
+    
+    .operator-controls {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+    }
+    
+    .operator-controls-label {
+        margin-right: 15px;
+        font-weight: 600;
+    }
+    
+    .user-info-card {
+        margin-bottom: 15px;
+        border-left: 4px solid #fd7e14;
+    }
 </style>
 {% endblock %}
 
@@ -412,6 +447,43 @@
         </div>
     </div>
 </div>
+
+<!-- Добавляем div для панели управления оператора -->
+<div class="operator-controls" id="operator-controls" style="display: none;">
+    <span class="operator-controls-label">Режим оператора:</span>
+    <div class="btn-group me-3">
+        <button class="btn btn-sm btn-success" id="take-over-btn">
+            <i class="fas fa-user-check me-1"></i> Взять чат
+        </button>
+        <button class="btn btn-sm btn-outline-success" id="return-to-bot-btn" disabled>
+            <i class="fas fa-robot me-1"></i> Вернуть боту
+        </button>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" id="resolve-request-btn">
+        <i class="fas fa-check me-1"></i> Закрыть заявку
+    </button>
+</div>
+
+<!-- Добавляем карточку информации о пользователе для оператора -->
+<div class="card user-info-card" id="user-info-card" style="display: none;">
+    <div class="card-body">
+        <h6 class="card-title">Информация о пользователе</h6>
+        <div class="row">
+            <div class="col-md-4">
+                <p class="mb-1"><strong>Имя:</strong> <span id="user-info-name">-</span></p>
+                <p class="mb-1"><strong>Email:</strong> <span id="user-info-email">-</span></p>
+            </div>
+            <div class="col-md-4">
+                <p class="mb-1"><strong>ID:</strong> <span id="user-info-id">-</span></p>
+                <p class="mb-1"><strong>Роль:</strong> <span id="user-info-role">-</span></p>
+            </div>
+            <div class="col-md-4">
+                <p class="mb-1"><strong>ID чата:</strong> <span id="user-info-chat-id">-</span></p>
+                <p class="mb-1"><strong>Сообщений:</strong> <span id="user-info-message-count">-</span></p>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -435,6 +507,10 @@
         let currentChatId = generateChatId(); // Генерируем ID нового чата при загрузке
         let currentRating = 0;
         let recognition = null; // Переменная для хранения объекта распознавания речи
+        
+        // Переменные для режима оператора
+        let isOperatorMode = false;
+        let userInfo = null;
         
         // Инициализация
         async function init() {
@@ -487,13 +563,6 @@
             
             // Обработчик завершения чата
             finishChatBtn.addEventListener('click', finishChat);
-            
-            // Обработчик переключения сайдбара на мобильных устройствах
-            if (toggleSidebarBtn) {
-                toggleSidebarBtn.addEventListener('click', function() {
-                    document.querySelector('.chat-sidebar').classList.toggle('open');
-                });
-            }
             
             // Обработчики для модального окна оценки
             ratingStars.forEach(star => {
@@ -557,6 +626,14 @@
                     }
                 });
             });
+            
+            // Проверяем, нужно ли активировать режим оператора
+            const operatorModeActivated = checkOperatorMode();
+            
+            // Если активирован режим оператора, инициализируем обработчики
+            if (operatorModeActivated) {
+                initOperatorHandlers();
+            }
         }
         
         // Отправка сообщения
@@ -663,63 +740,48 @@
             }
         }
         
-        // Вызов оператора
+        // Функция для вызова оператора
         async function callOperator() {
             try {
-                // Показываем индикатор загрузки на кнопке
-                const operatorButton = document.querySelector('.operator-call-button button');
-                const originalText = operatorButton.innerHTML;
-                operatorButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Соединяем...';
-                operatorButton.disabled = true;
+                const operatorButton = document.querySelector('.operator-call-button');
+                const buttonText = operatorButton.querySelector('.btn');
                 
-                // Имитация запроса к серверу
-                const response = await fetch('/api/call-operator', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${api.token}`
-                    },
-                    body: JSON.stringify({
-                        chat_id: currentChatId
-                    })
-                });
+                // Меняем текст кнопки на загрузку
+                buttonText.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Соединяем...';
+                buttonText.disabled = true;
                 
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('Запрос на вызов оператора отправлен:', data);
-                    
-                    // Добавляем системное сообщение в чат
-                    addMessage('Запрос на соединение с оператором отправлен. Ожидайте ответа.', true);
-                    
-                    // Обновляем вид кнопки
-                    operatorButton.innerHTML = '<i class="bi bi-check-circle me-2"></i>Запрос отправлен';
-                    operatorButton.classList.remove('btn-primary');
-                    operatorButton.classList.add('btn-success');
-                    
-                    // Через несколько секунд скрываем кнопку
+                console.log('Вызываем оператора для чата:', currentChatId);
+                const result = await api.requestOperatorHelp(currentChatId, "Мне нужна помощь оператора");
+                
+                console.log('Результат вызова оператора:', result);
+                
+                // Меняем стиль кнопки на успешный
+                operatorButton.classList.add('success');
+                buttonText.classList.remove('btn-primary');
+                buttonText.classList.add('btn-success');
+                buttonText.innerHTML = '<i class="bi bi-check-circle me-2"></i>Запрос отправлен';
+                
+                // Показываем уведомление
+                showToast('success', 'Запрос отправлен', 'Оператор свяжется с вами в ближайшее время');
+                
+                // Через 5 секунд убираем кнопку плавно
+                setTimeout(() => {
+                    operatorButton.style.opacity = '0';
                     setTimeout(() => {
-                        gsap.to('.operator-call-button', {
-                            opacity: 0, 
-                            y: 20, 
-                            duration: 0.3,
-                            onComplete: () => document.querySelector('.operator-call-button').remove()
-                        });
-                    }, 5000);
-                    
-                } else {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Ошибка при вызове оператора');
-                }
+                        operatorButton.remove();
+                    }, 500);
+                }, 5000);
                 
             } catch (error) {
-                console.error('Error calling operator:', error);
+                console.error('Ошибка при вызове оператора:', error);
                 
                 // Восстанавливаем кнопку
-                const operatorButton = document.querySelector('.operator-call-button button');
-                operatorButton.innerHTML = '<i class="bi bi-headset me-2"></i> Соединиться с оператором';
-                operatorButton.disabled = false;
+                const buttonText = document.querySelector('.operator-call-button .btn');
+                buttonText.innerHTML = '<i class="bi bi-headset me-2"></i>Соединиться с оператором';
+                buttonText.disabled = false;
                 
-                showToast('Ошибка при вызове оператора: ' + error.message, 'error');
+                // Показываем уведомление об ошибке
+                showToast('error', 'Ошибка', 'Не удалось отправить запрос оператору. Попробуйте позже.');
             }
         }
         
@@ -1061,6 +1123,291 @@
             } catch (error) {
                 console.error('Error updating chat list:', error);
             }
+        }
+        
+        // Функция для проверки URL и включения режима оператора
+        function checkOperatorMode() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const chatId = urlParams.get('chat_id');
+            const role = "{{ user.role }}";
+            
+            // Если есть параметр chat_id и пользователь - оператор или администратор
+            if (chatId && (role === 'operator' || role === 'admin')) {
+                console.log('Включаем режим оператора для чата:', chatId);
+                
+                // Устанавливаем текущий ID чата
+                currentChatId = chatId;
+                
+                // Активируем режим оператора
+                activateOperatorMode();
+                
+                // Загружаем историю чата
+                loadChatHistory(chatId);
+                
+                // Обновляем список чатов и подсвечиваем активный
+                updateChatList();
+                
+                return true;
+            }
+            
+            return false;
+        }
+        
+        // Функция для активации режима оператора
+        function activateOperatorMode() {
+            isOperatorMode = true;
+            
+            // Добавляем индикатор режима оператора в заголовок
+            const chatTitle = document.querySelector('.chat-title');
+            const operatorBadge = document.createElement('span');
+            operatorBadge.className = 'operator-mode-badge';
+            operatorBadge.innerHTML = '<i class="fas fa-headset me-1"></i>Режим оператора';
+            chatTitle.appendChild(operatorBadge);
+            
+            // Показываем панель управления оператора
+            document.getElementById('operator-controls').style.display = 'flex';
+            
+            // Показываем карточку информации о пользователе
+            document.getElementById('user-info-card').style.display = 'block';
+            
+            // Получаем информацию о пользователе в чате
+            fetchUserInfoForChat(currentChatId);
+        }
+        
+        // Функция для получения информации о пользователе в чате
+        async function fetchUserInfoForChat(chatId) {
+            try {
+                // Загружаем историю чата
+                const chatHistory = await api.getChatHistory(chatId);
+                
+                if (chatHistory && chatHistory.messages && chatHistory.messages.length > 0) {
+                    // Находим первое сообщение пользователя (не бота)
+                    const userMessage = chatHistory.messages.find(msg => !msg.is_bot);
+                    
+                    if (userMessage) {
+                        // Получаем ID пользователя
+                        const userId = userMessage.user_id;
+                        
+                        // Получаем информацию о пользователе через API
+                        const userResponse = await fetch(`/api/users/${userId}`);
+                        
+                        if (userResponse.ok) {
+                            userInfo = await userResponse.json();
+                            
+                            // Заполняем информацию о пользователе
+                            document.getElementById('user-info-name').textContent = userInfo.username || '-';
+                            document.getElementById('user-info-email').textContent = userInfo.email || '-';
+                            document.getElementById('user-info-id').textContent = userInfo.id || '-';
+                            document.getElementById('user-info-role').textContent = userInfo.role || 'user';
+                            document.getElementById('user-info-chat-id').textContent = chatId.substring(0, 8) + '...';
+                            document.getElementById('user-info-message-count').textContent = chatHistory.messages.length;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка при получении информации о пользователе:', error);
+            }
+        }
+        
+        // Функция для изменения заголовка чата в режиме оператора
+        function updateChatTitleForOperator(chatId) {
+            const chatTitle = document.querySelector('.chat-title');
+            
+            // Очищаем заголовок
+            chatTitle.textContent = 'Чат #' + chatId.substring(0, 8);
+            
+            // Добавляем бейдж оператора
+            const operatorBadge = document.createElement('span');
+            operatorBadge.className = 'operator-mode-badge';
+            operatorBadge.innerHTML = '<i class="fas fa-headset me-1"></i>Режим оператора';
+            chatTitle.appendChild(operatorBadge);
+        }
+        
+        // Переопределяем функцию отправки сообщения для режима оператора
+        async function sendMessage() {
+            const message = chatInputTextarea.value.trim();
+            if (!message) return;
+            
+            // Очищаем поле ввода
+            chatInputTextarea.value = '';
+            chatInputTextarea.style.height = 'auto';
+            
+            try {
+                // Добавляем сообщение пользователя в интерфейс
+                addMessage(message, false);
+                
+                // Показываем индикатор набора
+                showTypingIndicator();
+                
+                // Сохраняем сообщение пользователя на сервере
+                console.log('Отправка сообщения пользователя на сервер, chatId:', currentChatId);
+                const userMessageData = await api.sendChatMessage(currentChatId, message);
+                console.log('Сообщение пользователя сохранено:', userMessageData);
+                
+                // Получаем ответ от AI (временная заглушка)
+                const aiResponse = await requestAIResponse(message);
+                
+                // Скрываем индикатор набора
+                hideTypingIndicator();
+                
+                // Добавляем ответ бота в интерфейс
+                addMessage(aiResponse.message, true, aiResponse.id);
+                
+                // Сохраняем ответ бота на сервере
+                console.log('Отправка ответа бота на сервер');
+                const botMessageData = await api.sendChatMessage(currentChatId, aiResponse.message, true);
+                console.log('Ответ бота сохранен:', botMessageData);
+                
+                // Проверяем на запрос оператора после ответа от AI
+                checkForOperatorRequest(message);
+                
+                // Обновляем список чатов
+                await updateChatList();
+                
+            } catch (error) {
+                console.error('Error sending message:', error);
+                hideTypingIndicator();
+                showToast('Ошибка при отправке сообщения: ' + error.message, 'error');
+            }
+        }
+        
+        // Добавляем функцию для отображения сообщения оператора
+        function addOperatorMessage(content, messageId) {
+            const message = document.createElement('div');
+            message.className = 'message message-operator';
+            
+            const messageContent = document.createElement('div');
+            messageContent.className = 'message-content';
+            messageContent.innerHTML = `<p class="mb-0">${content}</p>`;
+            
+            const messageMeta = document.createElement('div');
+            messageMeta.className = 'message-meta';
+            
+            const messageTime = document.createElement('div');
+            messageTime.className = 'message-time';
+            messageTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            // Добавляем метку оператора
+            const operatorLabel = document.createElement('div');
+            operatorLabel.className = 'message-time ms-2';
+            operatorLabel.innerHTML = '<i class="fas fa-headset me-1"></i>оператор';
+            
+            messageMeta.appendChild(messageTime);
+            messageMeta.appendChild(operatorLabel);
+            
+            message.appendChild(messageContent);
+            message.appendChild(messageMeta);
+            
+            chatBody.appendChild(message);
+            
+            // Прокручиваем чат вниз
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+        
+        // Модифицируем функцию загрузки истории чата для отображения сообщений оператора
+        async function loadChatHistory(chatId = currentChatId) {
+            // ... existing code ...
+            
+            // Добавляем проверку на сообщения от оператора
+            response.messages.forEach(message => {
+                try {
+                    let messageMetadata = {};
+                    if (message.message_metadata) {
+                        try {
+                            messageMetadata = JSON.parse(message.message_metadata);
+                        } catch (e) {
+                            console.error('Ошибка при парсинге метаданных сообщения:', e);
+                        }
+                    }
+                    
+                    // Если это сообщение от оператора
+                    if (messageMetadata.from_operator) {
+                        addOperatorMessage(message.message, message.id);
+                    } else if (message.is_bot) {
+                        // Если это сообщение от бота
+                        addMessage(message.message, true, message.id);
+                    } else {
+                        // Если это сообщение от пользователя
+                        addMessage(message.message, false, message.id);
+                    }
+                } catch (e) {
+                    console.error('Ошибка при добавлении сообщения:', e);
+                }
+            });
+            
+            // ... existing code ...
+        }
+        
+        // Инициализация обработчиков для режима оператора
+        function initOperatorHandlers() {
+            // Обработчик для кнопки "Взять чат"
+            document.getElementById('take-over-btn').addEventListener('click', function() {
+                this.disabled = true;
+                document.getElementById('return-to-bot-btn').disabled = false;
+                
+                // Отправляем системное сообщение о том, что оператор взял чат
+                addOperatorMessage('Оператор подключился к чату и готов помочь вам.');
+                
+                // Сохраняем системное сообщение в истории
+                api.sendChatMessage(currentChatId, 'Оператор подключился к чату и готов помочь вам.', true, {
+                    from_operator: true,
+                    operator_id: "{{ user.id }}",
+                    operator_name: "{{ user.username }}",
+                    system_message: true
+                });
+            });
+            
+            // Обработчик для кнопки "Вернуть боту"
+            document.getElementById('return-to-bot-btn').addEventListener('click', function() {
+                this.disabled = true;
+                document.getElementById('take-over-btn').disabled = false;
+                
+                // Отправляем системное сообщение о том, что оператор передал управление боту
+                addOperatorMessage('Оператор передал управление AI-ассистенту. Можете продолжать диалог с ботом.');
+                
+                // Сохраняем системное сообщение в истории
+                api.sendChatMessage(currentChatId, 'Оператор передал управление AI-ассистенту. Можете продолжать диалог с ботом.', true, {
+                    from_operator: true,
+                    operator_id: "{{ user.id }}",
+                    operator_name: "{{ user.username }}",
+                    system_message: true,
+                    return_to_bot: true
+                });
+            });
+            
+            // Обработчик для кнопки "Закрыть заявку"
+            document.getElementById('resolve-request-btn').addEventListener('click', async function() {
+                try {
+                    const result = await fetch(`/api/support-requests/${currentChatId}/resolve`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (!result.ok) {
+                        throw new Error('Не удалось закрыть заявку');
+                    }
+                    
+                    // Отправляем системное сообщение о закрытии заявки
+                    addOperatorMessage('Заявка на помощь оператора закрыта. Благодарим за обращение!');
+                    
+                    // Сохраняем системное сообщение в истории
+                    await api.sendChatMessage(currentChatId, 'Заявка на помощь оператора закрыта. Благодарим за обращение!', true, {
+                        from_operator: true,
+                        operator_id: "{{ user.id }}",
+                        operator_name: "{{ user.username }}",
+                        system_message: true,
+                        request_resolved: true
+                    });
+                    
+                    // Показываем уведомление
+                    showToast('success', 'Заявка закрыта', 'Заявка успешно закрыта');
+                } catch (error) {
+                    console.error('Ошибка при закрытии заявки:', error);
+                    showToast('error', 'Ошибка', 'Не удалось закрыть заявку');
+                }
+            });
         }
         
         // Инициализация

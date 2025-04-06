@@ -159,5 +159,45 @@
     <script src="{{ url_for('static', path='js/utils.js') }}"></script>
     
     {% block extra_js %}{% endblock %}
+    
+    <!-- Скрипт для обновления счетчика заявок для операторов -->
+    {% if user and user.role in ['operator', 'admin'] %}
+    <script>
+        // Функция для обновления счетчика заявок на помощь
+        async function updateSupportRequestsCount() {
+            try {
+                const supportRequestsBadge = document.getElementById('support-requests-badge');
+                if (!supportRequestsBadge) return;
+                
+                // Получаем активные заявки без использования кэша
+                const requests = await api.getSupportRequests(false);
+                const count = requests.length;
+                
+                console.log(`[NavBar] Получено ${count} активных заявок оператора`);
+                
+                // Обновляем значок в меню
+                if (count > 0) {
+                    supportRequestsBadge.textContent = count;
+                    supportRequestsBadge.style.display = 'inline-block';
+                    console.log(`[NavBar] Отображается бейдж с количеством: ${count}`);
+                } else {
+                    supportRequestsBadge.style.display = 'none';
+                    console.log('[NavBar] Бейдж скрыт (нет заявок)');
+                }
+            } catch (error) {
+                console.error('[NavBar] Ошибка при обновлении счетчика заявок:', error);
+            }
+        }
+        
+        // Обновляем счетчик при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            // Первоначальное обновление счетчика
+            updateSupportRequestsCount();
+            
+            // Периодическое обновление каждые 30 секунд
+            setInterval(updateSupportRequestsCount, 30000);
+        });
+    </script>
+    {% endif %}
 </body>
 </html> 

@@ -1,11 +1,19 @@
 {% extends "layout.html" %}
 
-{% block title %}Заявки на помощь{% endblock %}
+{% block title %}Заявки на помощь - TenderHack Platform{% endblock %}
 
-{% block styles %}
+{% block extra_css %}
 <style>
+    .support-page {
+        min-height: calc(100vh - 80px - 430px);
+        padding: 30px 0;
+    }
+    
     .request-card {
         transition: all 0.3s ease;
+        cursor: pointer;
+        margin-bottom: 20px;
+        border-left: 4px solid #dc3545;
     }
     
     .request-card:hover {
@@ -13,345 +21,380 @@
         box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
     }
     
-    .badge-new {
-        background-color: #ff5722;
-        color: white;
+    .request-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
     
-    .request-timestamp {
-        font-size: 0.8rem;
+    .request-time {
+        font-size: 0.9rem;
         color: #6c757d;
+    }
+    
+    .request-user {
+        font-weight: 600;
+    }
+    
+    .request-actions {
+        display: flex;
+        gap: 10px;
     }
     
     .empty-state {
         text-align: center;
-        padding: 3rem;
-        color: #6c757d;
+        padding: 50px 20px;
     }
     
-    .empty-state i {
+    .empty-icon {
         font-size: 4rem;
-        margin-bottom: 1rem;
-        opacity: 0.3;
+        color: #6c757d;
+        margin-bottom: 20px;
+    }
+    
+    .loading-spinner {
+        display: flex;
+        justify-content: center;
+        padding: 50px 0;
+    }
+    
+    .badge-request-count {
+        background-color: #dc3545;
+        color: white;
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        font-size: 0.75rem;
+    }
+    
+    .request-info {
+        font-size: 0.9rem;
+        color: #6c757d;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h1 class="mb-4">Заявки на помощь</h1>
-    
-    <div class="alert alert-success d-none" id="requests-alert"></div>
-    
-    <div id="requests-container">
-        <!-- Здесь будут отображаться заявки -->
+<div class="container support-page">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+            <i class="fas fa-headset me-2"></i> Заявки на помощь
+            <span class="badge rounded-pill bg-danger ms-2" id="request-count-badge">0</span>
+        </h2>
+        <button class="btn btn-outline-primary" id="refresh-requests">
+            <i class="fas fa-sync-alt me-2" id="refresh-icon"></i> Обновить
+        </button>
     </div>
     
-    <div id="empty-state" style="display: none;" class="text-center mt-5">
-        <i class="bi bi-inbox fs-1 text-muted"></i>
-        <h3 class="mt-3">Нет активных заявок</h3>
-        <p class="text-muted">Когда пользователи запросят помощь оператора, их заявки появятся здесь.</p>
-    </div>
-    
-    <!-- Добавленный контейнер для отладочной информации -->
-    <div id="debug-container" class="mt-4">
-        <!-- Сюда будет добавлена отладочная информация -->
-    </div>
-</div>
-
-<!-- Модальное окно для просмотра деталей заявки -->
-<div class="modal fade" id="requestDetailsModal" tabindex="-1" aria-labelledby="requestModalTitle" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="requestModalTitle">Детали заявки</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                Здесь отображаются активные запросы пользователей, нуждающихся в помощи оператора. Нажмите на карточку запроса, чтобы перейти в чат с пользователем.
             </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="fw-bold">Пользователь:</label>
-                    <div id="requestUsername">-</div>
+            
+            <div id="requests-container">
+                <!-- Здесь будут отображаться заявки на помощь -->
+                <div class="loading-spinner">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label class="fw-bold">Email:</label>
-                    <div id="requestEmail">-</div>
-                </div>
-                <div class="mb-3">
-                    <label class="fw-bold">Дата создания:</label>
-                    <div id="requestDate">-</div>
-                </div>
-                <div class="mb-3">
-                    <label class="fw-bold">Количество сообщений:</label>
-                    <div id="requestMessageCount">-</div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-                <button type="button" class="btn btn-success" id="resolveRequestBtn">
-                    <i class="bi bi-check-circle me-1"></i>
-                    Отметить как решенную
-                </button>
-                <button type="button" class="btn btn-primary" id="goToChatBtn">
-                    <i class="bi bi-chat-dots me-1"></i>
-                    Перейти в чат
-                </button>
             </div>
         </div>
     </div>
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
-    // При загрузке страницы получаем список заявок
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('Загрузка страницы заявок на помощь');
-        loadRequests();
-    });
-
-    // Функция загрузки заявок
-    async function loadRequests() {
+    // Переменные для работы с заявками
+    let supportRequests = [];
+    let refreshInterval = null;
+    
+    // Функция для получения заявок на помощь
+    async function fetchSupportRequests() {
         try {
-            console.log('Начинаем загрузку заявок...');
-            const requestsContainer = document.getElementById('requests-container');
-            const emptyState = document.getElementById('empty-state');
-            const requestsAlert = document.getElementById('requests-alert');
-            
-            // Показываем индикатор загрузки
-            requestsContainer.innerHTML = '<div class="d-flex justify-content-center my-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Загрузка...</span></div></div>';
-            
-            // Запрашиваем заявки через API
-            console.log('Вызываем API.getSupportRequests()');
-            const requests = await API.getSupportRequests();
-            console.log('Получены заявки:', requests);
-            
-            // Проверяем, есть ли заявки
-            if (requests && requests.length > 0) {
-                let requestsHTML = '';
-                
-                // Создаем карточки для каждой заявки
-                requests.forEach(request => {
-                    requestsHTML += createRequestCard(request);
-                });
-                
-                // Отображаем заявки
-                requestsContainer.innerHTML = requestsHTML;
-                emptyState.style.display = 'none';
-                
-                // Добавляем обработчики событий для кнопок просмотра
-                document.querySelectorAll('.view-request-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const requestId = this.getAttribute('data-request-id');
-                        const request = requests.find(r => r.chat_id === requestId);
-                        if (request) {
-                            showRequestDetails(request);
-                        }
-                    });
-                });
-                
-                // Показываем уведомление о количестве заявок
-                requestsAlert.innerHTML = `<strong>Найдено ${requests.length} активных заявок</strong>`;
-                requestsAlert.classList.remove('d-none');
-            } else {
-                // Если заявок нет, показываем empty state
-                requestsContainer.innerHTML = '';
-                emptyState.style.display = 'block';
-                requestsAlert.classList.add('d-none');
-                
-                console.log('Нет активных заявок');
-                
-                // Добавим проверку отладочного API
-                try {
-                    console.log('Проверяем отладочный API для заявок оператора...');
-                    const debugResponse = await fetch('/api/debug/operator-requests', {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${API.token}`,
-                        }
-                    });
-                    
-                    if (debugResponse.ok) {
-                        const debugData = await debugResponse.json();
-                        console.log('Данные отладочного API:', debugData);
-                        
-                        // Отображаем отладочную информацию
-                        const debugInfo = document.createElement('div');
-                        debugInfo.className = 'alert alert-info mt-3';
-                        debugInfo.innerHTML = `
-                            <h4>Отладочная информация:</h4>
-                            <p>Всего сообщений с метаданными: ${debugData.count}</p>
-                            <p>Запросы оператора: ${debugData.messages.filter(m => m.is_operator_request).length}</p>
-                            <p>Разрешенные запросы: ${debugData.messages.filter(m => m.is_resolved).length}</p>
-                            <p>Активные запросы: ${debugData.messages.filter(m => m.is_operator_request && !m.is_resolved).length}</p>
-                        `;
-                        document.getElementById('debug-container').innerHTML = '';
-                        document.getElementById('debug-container').appendChild(debugInfo);
-                        
-                        // Если есть сообщения с запросами операторов, отображаем их для отладки
-                        if (debugData.messages.some(m => m.is_operator_request)) {
-                            const debugTable = document.createElement('table');
-                            debugTable.className = 'table table-striped table-sm mt-3';
-                            debugTable.innerHTML = `
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Chat ID</th>
-                                        <th>Сообщение</th>
-                                        <th>Запрос оператора</th>
-                                        <th>Разрешен</th>
-                                        <th>Дата создания</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${debugData.messages.map(m => `
-                                        <tr>
-                                            <td>${m.id}</td>
-                                            <td>${m.chat_id}</td>
-                                            <td>${m.message}</td>
-                                            <td>${m.is_operator_request ? '<span class="badge bg-success">Да</span>' : '<span class="badge bg-secondary">Нет</span>'}</td>
-                                            <td>${m.is_resolved ? '<span class="badge bg-success">Да</span>' : '<span class="badge bg-warning">Нет</span>'}</td>
-                                            <td>${new Date(m.created_at).toLocaleString()}</td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            `;
-                            document.getElementById('debug-container').appendChild(debugTable);
-                        }
-                    }
-                } catch (error) {
-                    console.error('Ошибка получения отладочных данных:', error);
-                }
-            }
+            // Используем общий API клиент для обеспечения согласованности с индикатором в навигации
+            // Важно: НЕ используем кэш, чтобы всегда получать свежие данные
+            return await api.getSupportRequests(false);
         } catch (error) {
-            console.error('Ошибка при загрузке заявок:', error);
-            document.getElementById('requests-container').innerHTML = `
-                <div class="alert alert-danger">
-                    <strong>Ошибка!</strong> Не удалось загрузить заявки: ${error.message}
-                </div>
-            `;
+            console.error('Ошибка при получении заявок:', error);
+            return [];
         }
     }
-
-    document.addEventListener('DOMContentLoaded', async function() {
-        const requestsContainer = document.getElementById('requestsContainer');
-        const emptyState = document.getElementById('emptyState');
-        const modalUsername = document.getElementById('requestUsername');
-        const modalTimestamp = document.getElementById('requestDate');
-        const modalMessageCount = document.getElementById('requestMessageCount');
-        const goToChatBtn = document.getElementById('goToChatBtn');
-        const resolveRequestBtn = document.getElementById('resolveRequestBtn');
-        const requestDetailsModal = new bootstrap.Modal(document.getElementById('requestDetailsModal'));
+    
+    // Функция для отображения заявок
+    function renderSupportRequests(requests) {
+        console.group('Отображение заявок оператора');
         
-        let currentChatId = null;
+        const container = document.getElementById('requests-container');
+        const requestCountBadge = document.getElementById('request-count-badge');
+        const supportRequestsBadge = document.getElementById('support-requests-badge');
         
-        // Создание карточки заявки
-        function createRequestCard(request) {
-            // Форматируем дату
-            const requestDate = new Date(request.created_at);
-            const formattedDate = requestDate.toLocaleDateString() + ' ' + requestDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        // Обновляем счетчики
+        const count = requests.length;
+        console.log(`Количество заявок для отображения: ${count}`);
+        
+        requestCountBadge.textContent = count;
+        
+        // Обновляем значок в шапке
+        if (supportRequestsBadge) {
+            console.log('Обновляем бейдж в навигации');
+            if (count > 0) {
+                supportRequestsBadge.textContent = count;
+                supportRequestsBadge.style.display = 'inline-block';
+                console.log(`Бейдж показан с количеством: ${count}`);
+            } else {
+                supportRequestsBadge.style.display = 'none';
+                console.log('Бейдж скрыт (нет заявок)');
+            }
+        } else {
+            console.log('Бейдж в навигации не найден');
+        }
+        
+        // Очищаем контейнер
+        container.innerHTML = '';
+        
+        // Если нет заявок, показываем пустое состояние
+        if (requests.length === 0) {
+            console.log('Нет заявок для отображения, показываем пустое состояние');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">
+                        <i class="fas fa-inbox"></i>
+                    </div>
+                    <h4>Нет активных заявок</h4>
+                    <p class="text-muted">В данный момент нет пользователей, ожидающих помощи оператора.</p>
+                </div>
+            `;
+            console.groupEnd();
+            return;
+        }
+        
+        console.log('Отображаем заявки:');
+        
+        // Отображаем заявки
+        requests.forEach((request, index) => {
+            console.log(`Заявка #${index + 1}:`, {
+                chat_id: request.chat_id,
+                user: request.user?.username || 'Неизвестно',
+                created_at: request.created_at
+            });
             
-            // Создаем HTML карточки
-            return `
-                <div class="card mb-3 request-card">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <h5 class="card-title mb-0">
-                                <i class="bi bi-person-circle me-2"></i>
-                                ${request.user.username}
-                            </h5>
-                            <span class="badge bg-primary rounded-pill">${request.message_count} сообщений</span>
+            const timeAgo = timeAgoFormat(new Date(request.created_at));
+            
+            const card = document.createElement('div');
+            card.className = 'card request-card';
+            card.innerHTML = `
+                <div class="card-body">
+                    <div class="request-header">
+                        <h5 class="card-title mb-0">
+                            <span class="request-user">${request.user.username}</span>
+                        </h5>
+                        <span class="request-time">${timeAgo}</span>
+                    </div>
+                    <p class="card-text mt-2">
+                        Запрос помощи оператора в чате #${request.chat_id.substring(0, 8)}...
+                    </p>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="request-info">
+                            <span class="me-3">
+                                <i class="fas fa-envelope me-1"></i> ${request.message_count} сообщений
+                            </span>
+                            <span>
+                                <i class="fas fa-at me-1"></i> ${request.user.email || 'Не указан'}
+                            </span>
                         </div>
-                        <p class="card-text text-muted small mt-2">
-                            <i class="bi bi-clock me-1"></i>
-                            ${formattedDate}
-                        </p>
-                        <hr>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="badge bg-success">Новая заявка</span>
-                            <button type="button" class="btn btn-sm btn-primary view-request-btn" data-request-id="${request.chat_id}">
-                                <i class="bi bi-eye me-1"></i>
-                                Просмотреть
+                        <div class="request-actions">
+                            <button class="btn btn-success btn-sm handle-request" data-chat-id="${request.chat_id}">
+                                <i class="fas fa-headset me-1"></i> Ответить
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm resolve-request" data-chat-id="${request.chat_id}">
+                                <i class="fas fa-check me-1"></i> Закрыть
                             </button>
                         </div>
                     </div>
                 </div>
             `;
-        }
+            
+            container.appendChild(card);
+        });
         
-        // Отображение деталей заявки
-        function showRequestDetails(request) {
-            // Заполняем данные в модальном окне
-            const modalTitle = document.getElementById('requestModalTitle');
-            const requestUsername = document.getElementById('requestUsername');
-            const requestEmail = document.getElementById('requestEmail');
-            const requestDate = document.getElementById('requestDate');
-            const requestMessageCount = document.getElementById('requestMessageCount');
-            const chatBtn = document.getElementById('goToChatBtn');
-            const resolveBtn = document.getElementById('resolveRequestBtn');
-            
-            // Форматируем дату
-            const requestDateTime = new Date(request.created_at);
-            const formattedDateTime = requestDateTime.toLocaleDateString() + ' ' + requestDateTime.toLocaleTimeString();
-            
-            // Заполняем элементы модального окна
-            modalTitle.textContent = `Заявка от ${request.user.username}`;
-            requestUsername.textContent = request.user.username;
-            requestEmail.textContent = request.user.email || 'Email не указан';
-            requestDate.textContent = formattedDateTime;
-            requestMessageCount.textContent = request.message_count;
-            
-            // Устанавливаем ID чата для кнопок
-            chatBtn.setAttribute('data-chat-id', request.chat_id);
-            resolveBtn.setAttribute('data-chat-id', request.chat_id);
-            
-            // Добавляем обработчики событий для кнопок
-            chatBtn.onclick = function() {
-                window.location.href = `/chat/${request.chat_id}`;
-            };
-            
-            resolveBtn.onclick = async function() {
-                try {
-                    const result = await API.resolveSupportRequest(request.chat_id);
-                    if (result.success) {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Заявка решена',
-                            text: 'Заявка была успешно отмечена как решенная.',
-                            timer: 2000,
-                            showConfirmButton: false
-                        }).then(() => {
-                            // Закрываем модальное окно и обновляем список заявок
-                            const modal = bootstrap.Modal.getInstance(document.getElementById('requestDetailsModal'));
-                            modal.hide();
-                            loadRequests();
-                        });
-                    }
-                } catch (error) {
-                    console.error('Ошибка при разрешении заявки:', error);
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Ошибка',
-                        text: 'Не удалось разрешить заявку. Пожалуйста, попробуйте снова.'
-                    });
+        // Добавляем обработчики событий для кнопок
+        document.querySelectorAll('.handle-request').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const chatId = button.getAttribute('data-chat-id');
+                window.location.href = `/chat?chat_id=${chatId}`;
+            });
+        });
+        
+        document.querySelectorAll('.resolve-request').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const chatId = button.getAttribute('data-chat-id');
+                await resolveRequest(chatId);
+            });
+        });
+        
+        // Добавляем обработчики для карточек
+        document.querySelectorAll('.request-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                const chatId = card.querySelector('.handle-request').getAttribute('data-chat-id');
+                window.location.href = `/chat?chat_id=${chatId}`;
+            });
+        });
+        
+        console.log('Заявки успешно отображены');
+        console.groupEnd();
+    }
+    
+    // Функция для разрешения заявки
+    async function resolveRequest(chatId) {
+        try {
+            const response = await fetch(`/api/support-requests/${chatId}/resolve`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
                 }
-            };
+            });
             
-            // Показываем модальное окно
-            const modal = new bootstrap.Modal(document.getElementById('requestDetailsModal'));
-            modal.show();
-        }
-        
-        // Обновить счетчик заявок в боковом меню
-        function updateRequestCount(count) {
-            const badge = document.querySelector('#support-requests-badge');
-            if (badge) {
-                badge.textContent = count;
-                badge.style.display = count > 0 ? 'inline-block' : 'none';
+            if (!response.ok) {
+                throw new Error('Ошибка при разрешении заявки');
             }
+            
+            // Обновляем список заявок
+            loadRequests();
+            
+            // Показываем уведомление об успешном разрешении
+            showToast('Заявка успешно закрыта', 'success');
+        } catch (error) {
+            console.error('Ошибка при разрешении заявки:', error);
+            showToast('Ошибка при закрытии заявки', 'error');
         }
+    }
+    
+    // Форматирование времени
+    function timeAgoFormat(date) {
+        const now = new Date();
+        const diffMs = now - date;
+        const diffSec = Math.floor(diffMs / 1000);
+        const diffMin = Math.floor(diffSec / 60);
+        const diffHour = Math.floor(diffMin / 60);
+        const diffDay = Math.floor(diffHour / 24);
         
-        // Устанавливаем интервал для периодического обновления списка заявок
-        setInterval(loadRequests, 30000); // Обновляем каждые 30 секунд
+        if (diffSec < 60) {
+            return 'только что';
+        } else if (diffMin < 60) {
+            return `${diffMin} мин. назад`;
+        } else if (diffHour < 24) {
+            return `${diffHour} ч. назад`;
+        } else {
+            return `${diffDay} дн. назад`;
+        }
+    }
+    
+    // Функция для показа уведомлений
+    function showToast(message, type = 'info') {
+        const toastContainer = document.createElement('div');
+        toastContainer.style.position = 'fixed';
+        toastContainer.style.bottom = '20px';
+        toastContainer.style.right = '20px';
+        toastContainer.style.zIndex = '9999';
+        
+        const toast = document.createElement('div');
+        toast.className = `toast align-items-center text-white bg-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'primary'} border-0`;
+        toast.setAttribute('role', 'alert');
+        toast.setAttribute('aria-live', 'assertive');
+        toast.setAttribute('aria-atomic', 'true');
+        
+        toast.innerHTML = `
+            <div class="d-flex">
+                <div class="toast-body">
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        `;
+        
+        toastContainer.appendChild(toast);
+        document.body.appendChild(toastContainer);
+        
+        const bsToast = new bootstrap.Toast(toast, { delay: 3000 });
+        bsToast.show();
+        
+        toast.addEventListener('hidden.bs.toast', () => {
+            document.body.removeChild(toastContainer);
+        });
+    }
+    
+    // Функция для загрузки заявок
+    async function loadRequests() {
+        try {
+            console.group('Загрузка заявок оператора');
+            console.log('Запрашиваем список заявок...');
+            
+            const requests = await fetchSupportRequests();
+            console.log(`Получено ${requests.length} заявок:`, requests);
+            
+            supportRequests = requests;
+            renderSupportRequests(requests);
+            
+            console.groupEnd();
+        } catch (error) {
+            console.error('Ошибка при загрузке заявок:', error);
+            showToast('Ошибка при загрузке заявок', 'error');
+            console.groupEnd();
+        }
+    }
+    
+    // Инициализация страницы
+    document.addEventListener('DOMContentLoaded', () => {
+        // Загружаем заявки при загрузке страницы
+        loadRequests();
+        
+        // Настраиваем автообновление каждые 30 секунд
+        refreshInterval = setInterval(loadRequests, 30000);
+        
+        // Обработчик для кнопки обновления
+        document.getElementById('refresh-requests').addEventListener('click', () => {
+            const refreshBtn = document.getElementById('refresh-requests');
+            const refreshIcon = document.getElementById('refresh-icon');
+            
+            // Показываем индикатор загрузки
+            refreshBtn.disabled = true;
+            refreshIcon.classList.add('fa-spin');
+            
+            // Очищаем кэш на стороне API клиента (если есть)
+            if (window.apiClient && typeof window.apiClient.clearCache === 'function') {
+                window.apiClient.clearCache('/api/support-requests');
+            }
+            
+            // Пробуем несколько раз, чтобы убедиться, что получили свежие данные
+            loadRequests()
+                .then(() => {
+                    // Через 1 секунду попробуем еще раз для уверенности
+                    setTimeout(() => {
+                        loadRequests()
+                            .then(() => {
+                                console.log('Выполнено повторное обновление для проверки');
+                            })
+                            .finally(() => {
+                                // Возвращаем кнопку в исходное состояние
+                                refreshBtn.disabled = false;
+                                refreshIcon.classList.remove('fa-spin');
+                            });
+                    }, 1000);
+                });
+        });
+    });
+    
+    // Очищаем интервал при уходе со страницы
+    window.addEventListener('beforeunload', () => {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+        }
     });
 </script>
 {% endblock %} 
