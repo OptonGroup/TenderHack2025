@@ -70,15 +70,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const statsAccuracy = document.getElementById('stats-accuracy');
         
         if (!hasScrollTrigger) {
-            // Упрощенная анимация без ScrollTrigger
             if (statsUsers) gsap.to(statsUsers, {
-                innerHTML: 10000,
+                innerHTML: 9432,
                 duration: 2,
                 snap: { innerHTML: 1 }
             });
             
             if (statsTenders) gsap.to(statsTenders, {
-                innerHTML: 5000,
+                innerHTML: 150000,
                 duration: 2,
                 snap: { innerHTML: 1 }
             });
@@ -100,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
             gsap.set(statsUsers, { innerHTML: 0 });
             
             gsap.to(statsUsers, {
-                innerHTML: 10000,
+                innerHTML: 9437,
                 duration: 2,
                 snap: { innerHTML: 1 },
                 scrollTrigger: {
@@ -115,7 +114,7 @@ document.addEventListener('DOMContentLoaded', function() {
             gsap.set(statsTenders, { innerHTML: 0 });
             
             gsap.to(statsTenders, {
-                innerHTML: 5000,
+                innerHTML: 150000,
                 duration: 2,
                 snap: { innerHTML: 1 },
                 scrollTrigger: {
