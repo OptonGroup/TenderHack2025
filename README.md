@@ -184,3 +184,8 @@ cd ..
 # Упаковка в Docker (опционально)
 docker build -t tenderhack2025 
 ```
+
+# Скриншоты продукта
+![pupupu](https://github.com/user-attachments/assets/8a70b2d2-0b2f-4635-8f5a-24c5a7b5e127)
+
+
