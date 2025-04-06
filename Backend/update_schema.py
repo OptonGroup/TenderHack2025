@@ -1,6 +1,10 @@
 from sqlalchemy import create_engine, text
-from database import SQLALCHEMY_DATABASE_URL
+import os
+from dotenv import load_dotenv
 import logging
+
+# Load environment variables
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,8 +16,17 @@ def upgrade_database():
     """
     logger.info("Starting database schema upgrade...")
     
+    # Get database URL from environment
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    
+    if not DATABASE_URL:
+        logger.error("DATABASE_URL not found in environment variables")
+        raise ValueError("DATABASE_URL environment variable is not set")
+    
+    logger.info(f"Using database URL: {DATABASE_URL}")
+    
     # Create SQLAlchemy engine
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+    engine = create_engine(DATABASE_URL)
     conn = engine.connect()
     
     try:

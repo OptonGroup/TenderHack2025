@@ -656,26 +656,42 @@ class API {
     }
     
     /**
-     * Получить список заявок на поддержку (для операторов и администраторов)
-     * @returns {Promise<Array>} Список активных заявок
+     * Получить активные заявки на помощь оператора
+     * @returns {Promise<Array>} Список заявок
      */
     async getSupportRequests() {
+        if (!this.isLoggedIn()) {
+            console.error('Попытка получить заявки на помощь без авторизации');
+            throw new Error('Требуется авторизация');
+        }
+
         try {
+            console.log('Запрашиваем список заявок на помощь оператора');
             const response = await fetch('/api/support-requests', {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${this.token}`,
-                    'Accept': 'application/json'
                 },
             });
+
+            console.log('Ответ API заявок, статус:', response.status);
             
             if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
+                const errorText = await response.text();
+                console.error('Ошибка получения заявок, текст ответа:', errorText);
+                try {
+                    const errorData = JSON.parse(errorText);
+                    throw new Error(errorData.detail || `Ошибка HTTP! Статус: ${response.status}`);
+                } catch (e) {
+                    throw new Error(`Ошибка получения заявок: ${response.status} - ${errorText || 'Нет ответа'}`);
+                }
             }
-            
-            return await response.json();
+
+            const result = await response.json();
+            console.log('Получены заявки на помощь, количество:', result.length, 'Данные:', result);
+            return result;
         } catch (error) {
-            console.error('Error fetching support requests:', error);
+            console.error('Ошибка при получении заявок на помощь:', error);
             throw error;
         }
     }
@@ -714,32 +730,52 @@ class API {
      */
     async requestOperatorHelp(chatId, message) {
         try {
-            const payload = {
-                message,
-                is_bot: false,
-                message_metadata: {
-                    operator_request: true,
-                    request_timestamp: new Date().toISOString()
-                }
-            };
+            console.log('Отправляем запрос оператора для чата:', chatId, 'Сообщение:', message);
             
-            const response = await fetch(`/api/chat-history/${chatId}/messages`, {
+            // Сначала добавляем сообщение пользователя с запросом
+            const userMessage = await this.sendChatMessage(chatId, message, false);
+            console.log('Добавлено сообщение пользователя:', userMessage);
+            
+            // Затем делаем прямой вызов API оператора
+            console.log('Вызываем API оператора с данными:', { chat_id: chatId });
+            const response = await fetch('/api/call-operator', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${this.token}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({
+                    chat_id: chatId
+                }),
             });
             
+            console.log('Ответ от API оператора, статус:', response.status);
+            
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `HTTP error! Status: ${response.status}`);
+                const errorText = await response.text();
+                console.error('Ошибка вызова оператора, ответ:', errorText);
+                try {
+                    const errorData = JSON.parse(errorText);
+                    throw new Error(errorData.detail || `HTTP error! Status: ${response.status}`);
+                } catch (e) {
+                    throw new Error(`Ошибка вызова оператора: ${response.status} - ${errorText}`);
+                }
             }
             
-            return await response.json();
+            const result = await response.json();
+            console.log('Успешный ответ API оператора:', result);
+            
+            // Проверяем заявки оператора после создания
+            try {
+                const requests = await this.getSupportRequests();
+                console.log('Текущие заявки операторов после создания:', requests);
+            } catch (e) {
+                console.warn('Не удалось получить заявки операторов:', e);
+            }
+            
+            return result;
         } catch (error) {
-            console.error('Error requesting operator help:', error);
+            console.error('Ошибка при запросе помощи оператора:', error);
             throw error;
         }
     }

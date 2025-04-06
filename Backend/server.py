@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, Boolean
 from typing import List, Optional, Dict, Any
 import uvicorn
 from datetime import timedelta, datetime
@@ -18,6 +18,7 @@ from passlib.context import CryptContext
 from pydantic import validate_arguments
 import pandas as pd
 import logging
+import json
 
 from database import get_db, init_db
 import models
@@ -400,6 +401,13 @@ async def create_tender(tender: schemas.TenderCreate,
     """
     Создание нового тендера
     """
+    # Check if user has the right role to create tenders (only regular users and admins)
+    if current_user.role == "operator":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Операторы не могут создавать тендеры"
+        )
+    
     new_tender = models.Tender(**tender.dict(), creator_id=current_user.id)
     db.add(new_tender)
     db.commit()
@@ -1022,111 +1030,329 @@ async def import_parquet(
 @app.post("/api/call-operator")
 async def call_operator(
     request: Request,
-    data: Dict[str, Any],
-    current_user: models.User = Depends(get_api_user),
-    db: Session = Depends(get_db)
+    call_data: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
 ):
     """
-    Обработка запроса на соединение с оператором
+    Зарегистрировать запрос на помощь оператора
     """
     try:
-        chat_id = data.get("chat_id")
+        chat_id = call_data.get("chat_id")
         if not chat_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Не указан ID чата"
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "chat_id is required"}
             )
+
+        # Создание системного сообщения с метаданными для оператора
+        metadata = {
+            "operator_request": True,  # Использовать Python булево значение
+            "resolved": False,         # Использовать Python булево значение
+            "request_time": datetime.utcnow().isoformat(),
+            "requestor_id": current_user.id,
+            "requestor_name": current_user.username
+        }
         
-        logger.info(f"Получен запрос на соединение с оператором от пользователя {current_user.id} для чата {chat_id}")
+        # Преобразуем метаданные в JSON для хранения
+        metadata_json = json.dumps(metadata)
         
-        # Здесь будет логика обработки запроса:
-        # 1. Проверка доступности операторов
-        # 2. Назначение оператора в чат
-        # 3. Уведомление оператора и т.д.
+        logger.info(f"Создание запроса оператора от пользователя {current_user.username} для чата {chat_id}")
+        logger.info(f"Метаданные запроса: {metadata_json}")
         
-        # Пока что просто имитируем обработку запроса
-        
-        # Добавляем системное сообщение в чат
+        # Добавляем системное сообщение, указывающее на запрос оператора
         system_message = models.ChatHistory(
-            user_id=current_user.id,
             chat_id=chat_id,
-            message="Запрос на соединение с оператором зарегистрирован. Ожидайте ответа.",
+            user_id=None,  # Системное сообщение
+            message="Запрос на соединение с оператором зарегистрирован. Оператор свяжется с вами в ближайшее время.",
             is_bot=True,
-            message_metadata={"type": "system", "operator_request": True}
+            message_metadata=metadata_json
         )
-        
         db.add(system_message)
         db.commit()
         
+        # Проверяем, что запрос действительно попал в базу
+        # и имеет правильные метаданные
+        saved_message = db.query(models.ChatHistory).filter(
+            models.ChatHistory.id == system_message.id
+        ).first()
+        
+        logger.info(f"Системное сообщение создано с ID {saved_message.id}")
+        
+        if saved_message:
+            try:
+                loaded_metadata = json.loads(saved_message.message_metadata) if saved_message.message_metadata else {}
+                logger.info(f"Сохраненные метаданные: {loaded_metadata}")
+                
+                # Проверка, что метаданные содержат флаг оператора
+                if loaded_metadata.get("operator_request") is True:
+                    logger.info("Метаданные содержат флаг запроса оператора = True")
+                else:
+                    logger.warning(f"Проблема с метаданными: operator_request = {loaded_metadata.get('operator_request')}")
+            except Exception as e:
+                logger.error(f"Ошибка при проверке метаданных сообщения: {e}")
+        
+        # Проверяем, сколько всего активных запросов оператора
+        try:
+            active_requests_query = db.query(models.ChatHistory).filter(
+                models.ChatHistory.message_metadata.isnot(None)
+            )
+            active_requests_count = 0
+            
+            for msg in active_requests_query.all():
+                try:
+                    msg_metadata = json.loads(msg.message_metadata) if msg.message_metadata else {}
+                    if msg_metadata.get("operator_request") is True and msg_metadata.get("resolved") is not True:
+                        active_requests_count += 1
+                except:
+                    pass
+            
+            logger.info(f"Всего активных запросов оператора после добавления: {active_requests_count}")
+        except Exception as e:
+            logger.error(f"Ошибка при подсчете запросов оператора: {e}")
+        
+        # Возвращаем ответ пользователю
         return {
             "success": True,
-            "message": "Запрос на соединение с оператором принят",
+            "message": "Запрос на помощь оператора зарегистрирован",
             "estimated_wait_time": "5-10 минут"
         }
-        
     except Exception as e:
-        logger.error(f"Ошибка при обработке запроса на вызов оператора: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка при обработке запроса: {str(e)}"
+        logger.error(f"Ошибка при регистрации запроса оператора: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Ошибка при регистрации запроса оператора: {str(e)}"}
         )
 
+@app.get("/api/support-requests")
+async def get_support_requests(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    Получить активные заявки на помощь от пользователей (для операторов и администраторов)
+    """
+    try:
+        # Проверяем, есть ли у пользователя права на доступ к заявкам
+        if current_user.role not in ['admin', 'operator']:
+            logger.warning(f"Пользователь {current_user.username} (роль: {current_user.role}) пытается получить заявки на помощь")
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Нет доступа к заявкам на помощь"}
+            )
+        
+        logger.info(f"Запрос заявок на помощь от пользователя {current_user.username} (роль: {current_user.role})")
+        
+        # Находим все сообщения с флагом оператора, которые не разрешены
+        operator_messages = db.query(models.ChatHistory).filter(
+            models.ChatHistory.message_metadata.isnot(None)
+        ).order_by(models.ChatHistory.created_at.desc()).limit(100).all()
+        
+        logger.info(f"Найдено {len(operator_messages)} сообщений с метаданными")
+        
+        active_requests = []
+        chat_ids_processed = set()
+        
+        for message in operator_messages:
+            try:
+                if not message.message_metadata:
+                    continue
+                
+                metadata = json.loads(message.message_metadata)
+                
+                # Проверка, является ли сообщение запросом оператора и не разрешено
+                is_operator_request = metadata.get("operator_request") is True
+                is_resolved = metadata.get("resolved") is True
+                
+                logger.debug(f"Сообщение ID {message.id}, chat_id {message.chat_id}: operator_request={is_operator_request}, resolved={is_resolved}")
+                
+                if is_operator_request and not is_resolved and message.chat_id not in chat_ids_processed:
+                    # Находим пользователя, создавшего запрос
+                    user_id = metadata.get("requestor_id")
+                    user = db.query(models.User).filter(models.User.id == user_id).first() if user_id else None
+                    
+                    if not user:
+                        # Если не найден пользователь в метаданных, ищем по связанным сообщениям
+                        chat_user_message = db.query(models.ChatHistory).filter(
+                            models.ChatHistory.chat_id == message.chat_id,
+                            models.ChatHistory.user_id.isnot(None),
+                            models.ChatHistory.is_bot == False
+                        ).first()
+                        
+                        if chat_user_message:
+                            user_id = chat_user_message.user_id
+                            user = db.query(models.User).filter(models.User.id == user_id).first()
+                    
+                    # Считаем количество сообщений в чате
+                    message_count = db.query(models.ChatHistory).filter(
+                        models.ChatHistory.chat_id == message.chat_id
+                    ).count()
+                    
+                    request_data = {
+                        "chat_id": message.chat_id,
+                        "message_id": message.id,
+                        "created_at": message.created_at.isoformat(),
+                        "request_time": metadata.get("request_time"),
+                        "message_count": message_count,
+                        "user": {
+                            "id": user.id if user else None,
+                            "username": user.username if user else "Unknown User",
+                            "email": user.email if user else None
+                        } if user else {
+                            "id": None,
+                            "username": metadata.get("requestor_name", "Unknown User"),
+                            "email": None
+                        }
+                    }
+                    
+                    active_requests.append(request_data)
+                    chat_ids_processed.add(message.chat_id)
+            except Exception as e:
+                logger.error(f"Ошибка при обработке сообщения {message.id}: {e}")
+        
+        logger.info(f"Найдено {len(active_requests)} активных заявок")
+        
+        # Сортируем по времени создания (сначала новые)
+        active_requests.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        
+        return active_requests
+    except Exception as e:
+        logger.error(f"Ошибка при получении заявок на помощь: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Ошибка при получении заявок на помощь: {str(e)}"}
+        )
+
+@app.get("/api/debug/operator-requests")
+async def debug_operator_requests(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """
+    Отладочный эндпоинт для проверки всех сообщений с метаданными оператора
+    """
+    if current_user.role not in ['admin', 'operator']:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Доступ запрещен"}
+        )
+    
+    try:
+        # Получаем последние 50 сообщений с любыми метаданными
+        messages = db.query(models.ChatHistory).filter(
+            models.ChatHistory.message_metadata.isnot(None)
+        ).order_by(models.ChatHistory.created_at.desc()).limit(50).all()
+        
+        result = []
+        for msg in messages:
+            metadata = {}
+            try:
+                metadata = json.loads(msg.message_metadata) if msg.message_metadata else {}
+            except:
+                metadata = {"error": "Failed to parse metadata"}
+            
+            # Включаем информацию о том, является ли это запросом оператора
+            operator_request = metadata.get("operator_request")
+            resolved = metadata.get("resolved")
+            
+            result.append({
+                "id": msg.id,
+                "chat_id": msg.chat_id,
+                "user_id": msg.user_id,
+                "is_bot": msg.is_bot,
+                "created_at": msg.created_at.isoformat(),
+                "message": msg.message[:100] + "..." if len(msg.message) > 100 else msg.message,
+                "raw_metadata": msg.message_metadata,
+                "parsed_metadata": metadata,
+                "is_operator_request": operator_request is True,
+                "is_resolved": resolved is True
+            })
+        
+        return {
+            "count": len(result),
+            "messages": result
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при отладке запросов оператора: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Ошибка при отладке запросов оператора: {str(e)}"}
+        )
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_page(
-    request: Request,
-    user: models.User = Depends(get_admin_user),
-    db: Session = Depends(get_db)
-):
+async def admin_page(request: Request, db: Session = Depends(get_db)):
     """
     Административная панель (только для администраторов)
     """
-    # Получаем статистику для отображения на панели
-    user_count = db.query(func.count(models.User.id)).scalar() or 0
-    tender_count = db.query(func.count(models.Tender.id)).scalar() or 0
-    operator_count = db.query(func.count(models.User.id)).filter(models.User.role == "operator").scalar() or 0
-    
-    # Получаем количество активных заявок на поддержку
-    support_request_count = db.query(func.count(models.ChatHistory.id))\
-        .filter(models.ChatHistory.message_metadata.op('->')('operator_request').cast(Boolean) == True)\
-        .filter(models.ChatHistory.message_metadata.op('->')('resolved').cast(Boolean) != True)\
-        .scalar() or 0
-    
-    # Получаем недавно зарегистрированных пользователей
-    recent_users = db.query(models.User)\
-        .order_by(models.User.created_at.desc())\
-        .limit(10)\
-        .all()
-    
-    return templates.TemplateResponse(
-        "admin.html",
-        {
-            "request": request,
-            "user": user,
-            "user_count": user_count,
-            "tender_count": tender_count,
-            "operator_count": operator_count,
-            "support_request_count": support_request_count,
-            "recent_users": recent_users
-        }
-    )
+    try:
+        # Get user from cookie token
+        user = await get_api_user(request, None, db)
+        
+        # Check if user has admin role
+        if user.role != "admin":
+            # If user doesn't have admin role, redirect to main page
+            return RedirectResponse(url="/")
+        
+        # Получаем статистику для отображения на панели
+        user_count = db.query(func.count(models.User.id)).scalar() or 0
+        tender_count = db.query(func.count(models.Tender.id)).scalar() or 0
+        operator_count = db.query(func.count(models.User.id)).filter(models.User.role == "operator").scalar() or 0
+        
+        # Получаем количество активных заявок на поддержку
+        support_request_count = db.query(func.count(models.ChatHistory.id))\
+            .filter(models.ChatHistory.message_metadata.op('->>')('operator_request') == 'true')\
+            .filter((models.ChatHistory.message_metadata.op('->>')('resolved').is_(None)) | 
+                   (models.ChatHistory.message_metadata.op('->>')('resolved') != 'true'))\
+            .scalar() or 0
+        
+        # Получаем недавно зарегистрированных пользователей
+        recent_users = db.query(models.User)\
+            .order_by(models.User.created_at.desc())\
+            .limit(10)\
+            .all()
+        
+        return templates.TemplateResponse(
+            "admin.html",
+            {
+                "request": request,
+                "user": user,
+                "user_count": user_count,
+                "tender_count": tender_count,
+                "operator_count": operator_count,
+                "support_request_count": support_request_count,
+                "recent_users": recent_users
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error accessing admin page: {str(e)}")
+        # If not authenticated, redirect to login
+        return RedirectResponse(url="/login")
 
 @app.get("/support-requests", response_class=HTMLResponse)
-async def support_requests_page(
-    request: Request,
-    user: models.User = Depends(get_operator_user),
-    db: Session = Depends(get_db)
-):
+async def support_requests_page(request: Request, db: Session = Depends(get_db)):
     """
     Страница заявок на поддержку (для операторов и администраторов)
     """
-    return templates.TemplateResponse(
-        "support_requests.html",
-        {
-            "request": request,
-            "user": user
-        }
-    )
+    try:
+        # Get user from cookie token
+        user = await get_api_user(request, None, db)
+        
+        # Check if user has proper role
+        if user.role not in ["operator", "admin"]:
+            # If user doesn't have operator or admin role, redirect to main page
+            return RedirectResponse(url="/")
+        
+        return templates.TemplateResponse(
+            "support_requests.html",
+            {
+                "request": request,
+                "user": user
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error accessing support requests page: {str(e)}")
+        # If not authenticated, redirect to login
+        return RedirectResponse(url="/login")
 
 @app.post("/api/users/{user_id}/role", response_model=schemas.User)
 async def update_user_role(
@@ -1166,98 +1392,6 @@ async def update_user_role(
     db.refresh(user)
     
     return user
-
-
-@app.get("/api/support-requests", response_model=List[Dict[str, Any]])
-async def get_support_requests(
-    current_user: models.User = Depends(get_operator_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Получение списка заявок на поддержку (для операторов и администраторов)
-    """
-    # Получаем все активные заявки на поддержку
-    active_requests = db.query(models.ChatHistory)\
-        .filter(models.ChatHistory.message_metadata.op('->')('operator_request').cast(Boolean) == True)\
-        .filter(models.ChatHistory.message_metadata.op('->')('resolved').cast(Boolean) != True)\
-        .order_by(models.ChatHistory.timestamp.desc())\
-        .all()
-    
-    # Группируем заявки по чатам
-    grouped_requests = {}
-    for request_item in active_requests:
-        if request_item.chat_id not in grouped_requests:
-            # Получаем имя пользователя
-            request_user = db.query(models.User).filter(models.User.id == request_item.user_id).first()
-            username = request_user.username if request_user else "Неизвестный пользователь"
-            
-            # Получаем количество сообщений в чате
-            message_count = db.query(func.count(models.ChatHistory.id))\
-                .filter(models.ChatHistory.chat_id == request_item.chat_id)\
-                .scalar() or 0
-            
-            grouped_requests[request_item.chat_id] = {
-                "chat_id": request_item.chat_id,
-                "user_id": request_item.user_id,
-                "username": username,
-                "timestamp": request_item.timestamp.isoformat(),
-                "message_count": message_count,
-                "status": "новая"
-            }
-    
-    return list(grouped_requests.values())
-
-
-@app.post("/api/support-requests/{chat_id}/resolve")
-async def resolve_support_request(
-    chat_id: str,
-    current_user: models.User = Depends(get_operator_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Отметить заявку на поддержку как решенную
-    """
-    # Находим все сообщения с запросом оператора в этом чате
-    operator_requests = db.query(models.ChatHistory)\
-        .filter(models.ChatHistory.chat_id == chat_id)\
-        .filter(models.ChatHistory.message_metadata.op('->')('operator_request').cast(Boolean) == True)\
-        .all()
-    
-    if not operator_requests:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Заявка не найдена"
-        )
-    
-    # Обновляем статус всех запросов в чате
-    for request_item in operator_requests:
-        if request_item.message_metadata is None:
-            request_item.message_metadata = {}
-        
-        metadata = request_item.message_metadata
-        metadata["resolved"] = True
-        metadata["resolved_by"] = current_user.id
-        metadata["resolved_at"] = datetime.utcnow().isoformat()
-        
-        request_item.message_metadata = metadata
-    
-    # Добавляем системное сообщение о решении
-    system_message = models.ChatHistory(
-        user_id=request_item.user_id,  # Используем ID пользователя из запроса
-        chat_id=chat_id,
-        message=f"Заявка решена оператором {current_user.username}.",
-        is_bot=True,
-        message_metadata={
-            "type": "system",
-            "operator_id": current_user.id,
-            "operator_username": current_user.username
-        }
-    )
-    
-    db.add(system_message)
-    db.commit()
-    
-    return {"success": True, "message": "Заявка успешно отмечена как решенная"}
 
 if __name__ == '__main__':
     uvicorn.run(

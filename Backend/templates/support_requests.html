@@ -38,63 +38,62 @@
 {% endblock %}
 
 {% block content %}
-<div class="container py-5">
-    <h2 class="mb-4">
-        <i class="fas fa-headset me-2"></i>
-        Заявки на помощь
-    </h2>
+<div class="container mt-4">
+    <h1 class="mb-4">Заявки на помощь</h1>
     
-    <div class="mb-4">
-        <div class="alert alert-info">
-            <i class="fas fa-info-circle me-2"></i>
-            Здесь вы можете видеть все активные заявки на помощь от пользователей.
-            Чтобы помочь пользователю, перейдите в его чат и отправьте сообщение.
-        </div>
+    <div class="alert alert-success d-none" id="requests-alert"></div>
+    
+    <div id="requests-container">
+        <!-- Здесь будут отображаться заявки -->
     </div>
     
-    <div class="row" id="requestsContainer">
-        <!-- Здесь будут отображаться заявки -->
-        <div class="col-12 empty-state" id="emptyState">
-            <i class="fas fa-inbox"></i>
-            <h4>Нет активных заявок</h4>
-            <p>В данный момент нет активных заявок на помощь от пользователей.</p>
-        </div>
+    <div id="empty-state" style="display: none;" class="text-center mt-5">
+        <i class="bi bi-inbox fs-1 text-muted"></i>
+        <h3 class="mt-3">Нет активных заявок</h3>
+        <p class="text-muted">Когда пользователи запросят помощь оператора, их заявки появятся здесь.</p>
+    </div>
+    
+    <!-- Добавленный контейнер для отладочной информации -->
+    <div id="debug-container" class="mt-4">
+        <!-- Сюда будет добавлена отладочная информация -->
     </div>
 </div>
 
 <!-- Модальное окно для просмотра деталей заявки -->
-<div class="modal fade" id="requestDetailsModal" tabindex="-1" aria-labelledby="requestDetailsModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade" id="requestDetailsModal" tabindex="-1" aria-labelledby="requestModalTitle" aria-hidden="true">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="requestDetailsModalLabel">Детали заявки</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title" id="requestModalTitle">Детали заявки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <strong>Пользователь:</strong>
-                    <span id="modalUsername"></span>
+                    <label class="fw-bold">Пользователь:</label>
+                    <div id="requestUsername">-</div>
                 </div>
                 <div class="mb-3">
-                    <strong>Дата создания:</strong>
-                    <span id="modalTimestamp"></span>
+                    <label class="fw-bold">Email:</label>
+                    <div id="requestEmail">-</div>
                 </div>
                 <div class="mb-3">
-                    <strong>Количество сообщений:</strong>
-                    <span id="modalMessageCount"></span>
+                    <label class="fw-bold">Дата создания:</label>
+                    <div id="requestDate">-</div>
                 </div>
                 <div class="mb-3">
-                    <button class="btn btn-primary" id="goToChatBtn">
-                        <i class="fas fa-comment me-2"></i>
-                        Перейти в чат
-                    </button>
+                    <label class="fw-bold">Количество сообщений:</label>
+                    <div id="requestMessageCount">-</div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
                 <button type="button" class="btn btn-success" id="resolveRequestBtn">
-                    <i class="fas fa-check me-2"></i>
+                    <i class="bi bi-check-circle me-1"></i>
                     Отметить как решенную
+                </button>
+                <button type="button" class="btn btn-primary" id="goToChatBtn">
+                    <i class="bi bi-chat-dots me-1"></i>
+                    Перейти в чат
                 </button>
             </div>
         </div>
@@ -104,173 +103,243 @@
 
 {% block scripts %}
 <script>
+    // При загрузке страницы получаем список заявок
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Загрузка страницы заявок на помощь');
+        loadRequests();
+    });
+
+    // Функция загрузки заявок
+    async function loadRequests() {
+        try {
+            console.log('Начинаем загрузку заявок...');
+            const requestsContainer = document.getElementById('requests-container');
+            const emptyState = document.getElementById('empty-state');
+            const requestsAlert = document.getElementById('requests-alert');
+            
+            // Показываем индикатор загрузки
+            requestsContainer.innerHTML = '<div class="d-flex justify-content-center my-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Загрузка...</span></div></div>';
+            
+            // Запрашиваем заявки через API
+            console.log('Вызываем API.getSupportRequests()');
+            const requests = await API.getSupportRequests();
+            console.log('Получены заявки:', requests);
+            
+            // Проверяем, есть ли заявки
+            if (requests && requests.length > 0) {
+                let requestsHTML = '';
+                
+                // Создаем карточки для каждой заявки
+                requests.forEach(request => {
+                    requestsHTML += createRequestCard(request);
+                });
+                
+                // Отображаем заявки
+                requestsContainer.innerHTML = requestsHTML;
+                emptyState.style.display = 'none';
+                
+                // Добавляем обработчики событий для кнопок просмотра
+                document.querySelectorAll('.view-request-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const requestId = this.getAttribute('data-request-id');
+                        const request = requests.find(r => r.chat_id === requestId);
+                        if (request) {
+                            showRequestDetails(request);
+                        }
+                    });
+                });
+                
+                // Показываем уведомление о количестве заявок
+                requestsAlert.innerHTML = `<strong>Найдено ${requests.length} активных заявок</strong>`;
+                requestsAlert.classList.remove('d-none');
+            } else {
+                // Если заявок нет, показываем empty state
+                requestsContainer.innerHTML = '';
+                emptyState.style.display = 'block';
+                requestsAlert.classList.add('d-none');
+                
+                console.log('Нет активных заявок');
+                
+                // Добавим проверку отладочного API
+                try {
+                    console.log('Проверяем отладочный API для заявок оператора...');
+                    const debugResponse = await fetch('/api/debug/operator-requests', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${API.token}`,
+                        }
+                    });
+                    
+                    if (debugResponse.ok) {
+                        const debugData = await debugResponse.json();
+                        console.log('Данные отладочного API:', debugData);
+                        
+                        // Отображаем отладочную информацию
+                        const debugInfo = document.createElement('div');
+                        debugInfo.className = 'alert alert-info mt-3';
+                        debugInfo.innerHTML = `
+                            <h4>Отладочная информация:</h4>
+                            <p>Всего сообщений с метаданными: ${debugData.count}</p>
+                            <p>Запросы оператора: ${debugData.messages.filter(m => m.is_operator_request).length}</p>
+                            <p>Разрешенные запросы: ${debugData.messages.filter(m => m.is_resolved).length}</p>
+                            <p>Активные запросы: ${debugData.messages.filter(m => m.is_operator_request && !m.is_resolved).length}</p>
+                        `;
+                        document.getElementById('debug-container').innerHTML = '';
+                        document.getElementById('debug-container').appendChild(debugInfo);
+                        
+                        // Если есть сообщения с запросами операторов, отображаем их для отладки
+                        if (debugData.messages.some(m => m.is_operator_request)) {
+                            const debugTable = document.createElement('table');
+                            debugTable.className = 'table table-striped table-sm mt-3';
+                            debugTable.innerHTML = `
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Chat ID</th>
+                                        <th>Сообщение</th>
+                                        <th>Запрос оператора</th>
+                                        <th>Разрешен</th>
+                                        <th>Дата создания</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${debugData.messages.map(m => `
+                                        <tr>
+                                            <td>${m.id}</td>
+                                            <td>${m.chat_id}</td>
+                                            <td>${m.message}</td>
+                                            <td>${m.is_operator_request ? '<span class="badge bg-success">Да</span>' : '<span class="badge bg-secondary">Нет</span>'}</td>
+                                            <td>${m.is_resolved ? '<span class="badge bg-success">Да</span>' : '<span class="badge bg-warning">Нет</span>'}</td>
+                                            <td>${new Date(m.created_at).toLocaleString()}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            `;
+                            document.getElementById('debug-container').appendChild(debugTable);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Ошибка получения отладочных данных:', error);
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка при загрузке заявок:', error);
+            document.getElementById('requests-container').innerHTML = `
+                <div class="alert alert-danger">
+                    <strong>Ошибка!</strong> Не удалось загрузить заявки: ${error.message}
+                </div>
+            `;
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', async function() {
         const requestsContainer = document.getElementById('requestsContainer');
         const emptyState = document.getElementById('emptyState');
-        const modalUsername = document.getElementById('modalUsername');
-        const modalTimestamp = document.getElementById('modalTimestamp');
-        const modalMessageCount = document.getElementById('modalMessageCount');
+        const modalUsername = document.getElementById('requestUsername');
+        const modalTimestamp = document.getElementById('requestDate');
+        const modalMessageCount = document.getElementById('requestMessageCount');
         const goToChatBtn = document.getElementById('goToChatBtn');
         const resolveRequestBtn = document.getElementById('resolveRequestBtn');
         const requestDetailsModal = new bootstrap.Modal(document.getElementById('requestDetailsModal'));
         
         let currentChatId = null;
         
-        // Загрузка списка заявок
-        async function loadRequests() {
-            try {
-                const requests = await api.getSupportRequests();
-                
-                // Скрываем сообщение об отсутствии заявок, если есть заявки
-                if (requests.length > 0) {
-                    emptyState.style.display = 'none';
-                } else {
-                    emptyState.style.display = 'block';
-                }
-                
-                // Очищаем контейнер перед добавлением новых карточек
-                requestsContainer.innerHTML = '';
-                if (requests.length === 0) {
-                    requestsContainer.appendChild(emptyState);
-                }
-                
-                // Создаем карточку для каждой заявки
-                requests.forEach(request => {
-                    const card = createRequestCard(request);
-                    requestsContainer.appendChild(card);
-                });
-                
-                // Обновляем счетчик заявок в меню
-                updateRequestCount(requests.length);
-            } catch (error) {
-                console.error('Ошибка при загрузке заявок:', error);
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Ошибка',
-                    text: 'Не удалось загрузить список заявок. Пожалуйста, попробуйте позже.',
-                });
-            }
-        }
-        
         // Создание карточки заявки
         function createRequestCard(request) {
-            const col = document.createElement('div');
-            col.className = 'col-md-6 col-lg-4 mb-4';
+            // Форматируем дату
+            const requestDate = new Date(request.created_at);
+            const formattedDate = requestDate.toLocaleDateString() + ' ' + requestDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
             
-            const cardDate = new Date(request.timestamp);
-            const formattedDate = cardDate.toLocaleString('ru-RU', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            
-            col.innerHTML = `
-                <div class="card request-card" data-chat-id="${request.chat_id}">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <div>
-                            <i class="fas fa-user me-2"></i>
-                            ${request.username}
-                        </div>
-                        <span class="badge badge-new">${request.status}</span>
-                    </div>
+            // Создаем HTML карточки
+            return `
+                <div class="card mb-3 request-card">
                     <div class="card-body">
-                        <div class="d-flex justify-content-between mb-2">
-                            <small class="request-timestamp">
-                                <i class="far fa-clock me-1"></i>
-                                ${formattedDate}
-                            </small>
-                            <small>
-                                <i class="far fa-comments me-1"></i>
-                                ${request.message_count} сообщений
-                            </small>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="card-title mb-0">
+                                <i class="bi bi-person-circle me-2"></i>
+                                ${request.user.username}
+                            </h5>
+                            <span class="badge bg-primary rounded-pill">${request.message_count} сообщений</span>
                         </div>
-                        <button class="btn btn-primary btn-sm w-100 mt-2 view-details-btn">
-                            <i class="fas fa-info-circle me-2"></i>
-                            Подробнее
-                        </button>
+                        <p class="card-text text-muted small mt-2">
+                            <i class="bi bi-clock me-1"></i>
+                            ${formattedDate}
+                        </p>
+                        <hr>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="badge bg-success">Новая заявка</span>
+                            <button type="button" class="btn btn-sm btn-primary view-request-btn" data-request-id="${request.chat_id}">
+                                <i class="bi bi-eye me-1"></i>
+                                Просмотреть
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;
-            
-            // Добавляем обработчик для кнопки "Подробнее"
-            col.querySelector('.view-details-btn').addEventListener('click', () => {
-                showRequestDetails(request);
-            });
-            
-            return col;
         }
         
-        // Показать детали заявки в модальном окне
+        // Отображение деталей заявки
         function showRequestDetails(request) {
-            currentChatId = request.chat_id;
+            // Заполняем данные в модальном окне
+            const modalTitle = document.getElementById('requestModalTitle');
+            const requestUsername = document.getElementById('requestUsername');
+            const requestEmail = document.getElementById('requestEmail');
+            const requestDate = document.getElementById('requestDate');
+            const requestMessageCount = document.getElementById('requestMessageCount');
+            const chatBtn = document.getElementById('goToChatBtn');
+            const resolveBtn = document.getElementById('resolveRequestBtn');
             
-            // Заполняем модальное окно данными заявки
-            modalUsername.textContent = request.username;
+            // Форматируем дату
+            const requestDateTime = new Date(request.created_at);
+            const formattedDateTime = requestDateTime.toLocaleDateString() + ' ' + requestDateTime.toLocaleTimeString();
             
-            const requestDate = new Date(request.timestamp);
-            modalTimestamp.textContent = requestDate.toLocaleString('ru-RU', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
+            // Заполняем элементы модального окна
+            modalTitle.textContent = `Заявка от ${request.user.username}`;
+            requestUsername.textContent = request.user.username;
+            requestEmail.textContent = request.user.email || 'Email не указан';
+            requestDate.textContent = formattedDateTime;
+            requestMessageCount.textContent = request.message_count;
             
-            modalMessageCount.textContent = request.message_count;
+            // Устанавливаем ID чата для кнопок
+            chatBtn.setAttribute('data-chat-id', request.chat_id);
+            resolveBtn.setAttribute('data-chat-id', request.chat_id);
             
-            // Настраиваем кнопку перехода в чат
-            goToChatBtn.onclick = () => {
+            // Добавляем обработчики событий для кнопок
+            chatBtn.onclick = function() {
                 window.location.href = `/chat/${request.chat_id}`;
             };
             
-            // Показываем модальное окно
-            requestDetailsModal.show();
-        }
-        
-        // Обработчик для кнопки "Отметить как решенную"
-        resolveRequestBtn.addEventListener('click', async () => {
-            if (!currentChatId) return;
-            
-            try {
-                // Показываем индикатор загрузки
-                Swal.fire({
-                    title: 'Обработка...',
-                    text: 'Пожалуйста, подождите',
-                    allowOutsideClick: false,
-                    didOpen: () => {
-                        Swal.showLoading();
+            resolveBtn.onclick = async function() {
+                try {
+                    const result = await API.resolveSupportRequest(request.chat_id);
+                    if (result.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Заявка решена',
+                            text: 'Заявка была успешно отмечена как решенная.',
+                            timer: 2000,
+                            showConfirmButton: false
+                        }).then(() => {
+                            // Закрываем модальное окно и обновляем список заявок
+                            const modal = bootstrap.Modal.getInstance(document.getElementById('requestDetailsModal'));
+                            modal.hide();
+                            loadRequests();
+                        });
                     }
-                });
-                
-                // Отправляем запрос на отметку заявки как решенной
-                await api.resolveSupportRequest(currentChatId);
-                
-                // Закрываем модальное окно
-                requestDetailsModal.hide();
-                
-                // Показываем сообщение об успехе
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Готово!',
-                    text: 'Заявка успешно отмечена как решенная',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
-                
-                // Перезагружаем список заявок
-                loadRequests();
-            } catch (error) {
-                console.error('Ошибка при отметке заявки как решенной:', error);
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Ошибка',
-                    text: 'Не удалось отметить заявку как решенную. Пожалуйста, попробуйте позже.',
-                });
-            }
-        });
+                } catch (error) {
+                    console.error('Ошибка при разрешении заявки:', error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Ошибка',
+                        text: 'Не удалось разрешить заявку. Пожалуйста, попробуйте снова.'
+                    });
+                }
+            };
+            
+            // Показываем модальное окно
+            const modal = new bootstrap.Modal(document.getElementById('requestDetailsModal'));
+            modal.show();
+        }
         
         // Обновить счетчик заявок в боковом меню
         function updateRequestCount(count) {
@@ -280,9 +349,6 @@
                 badge.style.display = count > 0 ? 'inline-block' : 'none';
             }
         }
-        
-        // Загружаем заявки при загрузке страницы
-        loadRequests();
         
         // Устанавливаем интервал для периодического обновления списка заявок
         setInterval(loadRequests, 30000); // Обновляем каждые 30 секунд

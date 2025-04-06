@@ -609,7 +609,8 @@
         
         // Проверка на запрос оператора
         function checkForOperatorRequest(message) {
-            const operatorPhrases = ['вызвать оператора', 'позвать оператора', 'нужен оператор', 'соединить с оператором'];
+            console.log('Проверка сообщения на запрос оператора:', message);
+            const operatorPhrases = ['вызвать оператора', 'позвать оператора', 'нужен оператор', 'соединить с оператором', 'оператор'];
             
             // Проверяем сообщение на наличие фраз для вызова оператора
             const lowerMessage = message.toLowerCase();
@@ -619,11 +620,14 @@
                 // Если найден запрос оператора, отображаем кнопку
                 console.log('Обнаружен запрос оператора в сообщении:', message);
                 showOperatorButton();
+                return true;
             }
+            return false;
         }
         
         // Показ кнопки вызова оператора
         function showOperatorButton() {
+            console.log('Показываем кнопку вызова оператора');
             // Проверяем, есть ли уже кнопка оператора
             if (!document.querySelector('.operator-call-button')) {
                 const operatorButton = document.createElement('div');
@@ -638,7 +642,9 @@
                 operatorButton.querySelector('button').addEventListener('click', callOperator);
                 
                 // Находим последнее сообщение от бота и вставляем после него
-                const lastBotMessage = document.querySelector('.message-bot:last-child');
+                const lastBotMessage = chatBody.querySelector('.message-bot:last-child');
+                console.log('Последнее сообщение бота:', lastBotMessage);
+                
                 if (lastBotMessage) {
                     lastBotMessage.insertAdjacentElement('afterend', operatorButton);
                 } else {
