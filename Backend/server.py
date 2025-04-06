@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
-from sqlalchemy import func, Boolean
+from sqlalchemy import func, Boolean, distinct
 from typing import List, Optional, Dict, Any
 import uvicorn
 from datetime import timedelta, datetime
