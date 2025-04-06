@@ -259,7 +259,10 @@ class ChatConversation(BaseModel):
     """Модель для получения всей истории конкретного чата"""
     chat_id: str
     messages: List[ChatHistory]
-    
+    topic: Optional[str] = None
+    username: Optional[str] = None
+    user_id: Optional[int] = None
+
     class Config:
         from_attributes = True
 
