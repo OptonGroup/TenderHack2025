@@ -18,7 +18,7 @@ import time  # Для измерения времени выполнения
 
 # Импорт библиотек для работы с нейронными сетями
 import torch  # Фреймворк для глубокого обучения
-from sentence_transformers import SentenceTransformer  # Для создания эмбеддингов предложений
+from sentence_transformers import SentenceTransformer, CrossEncoder  # Для создания эмбеддингов предложений
 from transformers import pipeline  # Для работы с предобученными моделями трансформеров
 
 # Импорт инструментов для обработки текста
@@ -41,7 +41,7 @@ class Model:
     """
     CANDIDATES_K = 100 # Количество кандидатов для этапа переранжирования
 
-    def __init__(self, dataset_path: str, use_bert: bool = True, use_llm: bool = True):
+    def __init__(self, dataset_path: str, use_bert: bool = True, use_llm: bool = True, use_cross_encoder: bool = True):
         """
         Инициализация модели поиска
         
@@ -49,7 +49,11 @@ class Model:
         dataset_path (str): Путь к файлу с базой знаний (parquet)
         use_bert (bool): Использовать ли BERT для семантического поиска
         use_llm (bool): Использовать ли LLM для генерации ответов
+        use_cross_encoder (bool): Использовать ли Cross-Encoder для переранжирования
         """
+        # Сохраняем путь к датасету
+        self.dataset_path = dataset_path
+        
         # Загрузка датасета
         self.dataset = pd.read_parquet(dataset_path)
         
@@ -63,6 +67,8 @@ class Model:
         self.use_bert = use_bert
         self.bert_model = None
         self.bert_embeddings = None
+        self.use_cross_encoder = use_cross_encoder
+        self.cross_encoder = None
         self.tfidf_matrix = None
         self.lsa_matrix = None
         
@@ -70,9 +76,19 @@ class Model:
         if self.use_bert:
             try:
                 self.bert_model = SentenceTransformer('ai-forever/sbert_large_nlu_ru')
+                print("SentenceTransformer (bert_model) загружен.")
             except Exception as e:
                 print(f"Не удалось загрузить BERT модель: {e}")
                 self.use_bert = False
+        
+        # Инициализация Cross-Encoder для переранжирования
+        if self.use_cross_encoder:
+            try:
+                self.cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+                print("CrossEncoder модель загружена.")
+            except Exception as e:
+                print(f"Не удалось загрузить CrossEncoder модель: {e}. Переранжирование с CrossEncoder отключено.")
+                self.use_cross_encoder = False
         
         # Дополнительные атрибуты для классификации и анализа запросов
         self.document_categories = {}  # Категории документов
@@ -109,42 +125,42 @@ class Model:
         
         # Предобработка текстов
         print("Предобработка текстов...")
-        self.dataset['processed_text'] = self.dataset['combined_text'].apply(
+        # Сначала полная предобработка для BERT и возможных будущих нужд
+        self.dataset['processed_text_full'] = self.dataset['combined_text'].apply(
             self.text_processor.preprocess_text
         )
+        # Затем упрощенная предобработка ТОЛЬКО для BM25
+        print("Упрощенная предобработка текстов для BM25...")
+        # Мы будем использовать результат _preprocess_for_bm25 напрямую (список токенов)
+        tokenized_corpus_for_bm25 = self.dataset['combined_text'].apply(
+            self.text_processor._preprocess_for_bm25
+        ).tolist()
 
-        # Токенизация текстов для BM25
-        print("Токенизация текстов для BM25...")
-        # --- Сохраняем индексы непустых документов для BM25 ---
-        self.bm25_indices = self.dataset[self.dataset['processed_text'] != ''].index.tolist()
-        if not self.bm25_indices:
-            print("Предупреждение: После предобработки не осталось непустых документов для BM25.")
-            tokenized_corpus = []
-        else:
-            # Убираем пустые строки и токенизируем только непустые
-            tokenized_corpus = [doc.split(" ") for doc in self.dataset.loc[self.bm25_indices, 'processed_text']]
-        # --------------------------------------------------------
+        # --- Используем уже готовый список списков токенов --- 
+        # Отфильтруем пустые списки, которые могли появиться после упрощенной обработки
+        self.bm25_indices = [idx for idx, tokens in enumerate(tokenized_corpus_for_bm25) if tokens] 
+        filtered_tokenized_corpus = [tokens for tokens in tokenized_corpus_for_bm25 if tokens]
 
         # Обучение BM25
         print("Обучение BM25...")
         # Проверка, что корпус не пуст
-        if tokenized_corpus:
-            self.bm25 = BM25Okapi(tokenized_corpus)
+        if filtered_tokenized_corpus:
+            print(f"Пример токенизированного документа для BM25 (первые 20 токенов): {filtered_tokenized_corpus[0][:20]}")
+            self.bm25 = BM25Okapi(filtered_tokenized_corpus)
             print("Модель BM25 обучена.")
         else:
-            print("Ошибка: Корпус для обучения BM25 пуст.")
-            # Можно добавить обработку ошибки или возврат
+            print("Ошибка: Корпус для обучения BM25 пуст после фильтрации.")
 
         # Если используем BERT, создаем семантические эмбеддинги
         if self.use_bert:
             try:
-                print("Создание BERT эмбеддингов...")
+                print("Создание эмбеддингов с помощью SentenceTransformer (bert_model)...")
                 self.bert_embeddings = self.bert_model.encode(
                     self.dataset['combined_text'].tolist(),
                     show_progress_bar=True,
                     batch_size=16
                 )
-                print(f"BERT эмбеддинги созданы, размер: {self.bert_embeddings.shape}")
+                print(f"Эмбеддинги (bert_embeddings) созданы, размер: {self.bert_embeddings.shape}")
             except Exception as e:
                 print(f"Ошибка при создании BERT эмбеддингов: {e}")
                 self.use_bert = False
@@ -204,30 +220,70 @@ class Model:
         query_embedding = None
         if self.use_bert and self.bert_model:
             try:
-                query_embedding = self.bert_model.encode(text) # Используем исходный текст для BERT
+                # Используем исходный текст для BERT / CrossEncoder
+                query_embedding = self.bert_model.encode(text) 
             except Exception as e:
                 print(f"Ошибка при кодировании запроса BERT: {e}")
                 self.use_bert = False # Отключаем BERT для этого запроса, если кодирование не удалось
 
+        # Предобрабатываем исходный запрос ОДИН РАЗ
+        processed_base_query = self.text_processor.preprocess_text(text)
+        # print(f"\n--- [DEBUG] Предобработанный базовый запрос: ---\n{processed_base_query}\n---") # Убираем отладку
+
         for query, weight in query_variants:
             # Токенизация предобработанного запроса
-            tokenized_query = query.split(" ")
+            # Сначала получаем УПРОЩЕННУЮ предобработку для варианта запроса `query`
+            # (query все еще содержит полную предобработку из _generate_query_variants)
+            # Лучше передавать исходный текст варианта в _preprocess_for_bm25, 
+            # но _generate_query_variants сейчас возвращает уже обработанный.
+            # Пока используем `text` - базовый исходный текст, но это НЕ ИДЕАЛЬНО.
+            # TODO: Переделать _generate_query_variants, чтобы возвращал исходные тексты вариантов.
+            tokenized_query_for_bm25 = self.text_processor._preprocess_for_bm25(text) # Используем базовый текст
+            if not tokenized_query_for_bm25:
+                print(f"Предупреждение: Пустой токенизированный запрос для BM25 после упрощенной обработки. Пропускаем вариант.")
+                all_scores.append(np.zeros(num_docs))
+                all_candidate_data_variants.append(None)
+                continue
             
             # ===== Этап 1: Retrieval (BM25) =====
             bm25_scores = np.zeros(num_docs)
             if self.bm25:
                 try:
-                    bm25_raw_scores = self.bm25.get_scores(tokenized_query)
-                    if hasattr(self, 'bm25_indices') and len(bm25_raw_scores) == len(self.bm25_indices):
-                        bm25_scores[self.bm25_indices] = bm25_raw_scores
+                    # Используем УПРОЩЕННУЮ токенизацию запроса
+                    bm25_raw_scores = self.bm25.get_scores(tokenized_query_for_bm25)
+                    # Проверка совпадения размеров: bm25_indices теперь содержит индексы оригинального датасета
+                    # для которых был создан корпус filtered_tokenized_corpus
+                    if hasattr(self, 'bm25_indices') and len(bm25_raw_scores) == len(self.bm25_indices): # <<<--- ИСПРАВЛЕНО: Сравниваем с количеством индексов
+                        # Создаем временный массив оценок, индексированный так же, как bm25_indices
+                        scores_for_indices = np.zeros(len(self.bm25_indices))
+                        # Заполняем оценки, полученные от BM25
+                        scores_for_indices = bm25_raw_scores
+                        # Распределяем оценки по оригинальным индексам датасета
+                        for i, original_idx in enumerate(self.bm25_indices):
+                            if i < len(scores_for_indices): # Защита от ошибок несоответствия длины
+                                bm25_scores[original_idx] = scores_for_indices[i]
+                            else:
+                                print(f"Предупреждение: Индекс {i} вне диапазона scores_for_indices ({len(scores_for_indices)}) при сопоставлении bm25_indices.")
+                                
                     elif hasattr(self, 'bm25_indices'):
-                         print(f"Предупреждение: Несоответствие размеров BM25 scores ({len(bm25_raw_scores)}) и bm25_indices ({len(self.bm25_indices)}). Оценки BM25 не будут применены.")
+                        print(f"Предупреждение: Несоответствие размеров BM25 scores ({len(bm25_raw_scores)}) и bm25_indices ({len(self.bm25_indices)}). Оценки BM25 не будут применены.")
                     else:
                         print("Предупреждение: Отсутствуют индексы bm25_indices. Оценки BM25 не будут применены.")
                 except Exception as e:
                     print(f"Ошибка при расчете BM25 для запроса '{query[:50]}...': {e}")
             else:
                 print("Предупреждение: Модель BM25 недоступна.")
+
+            # --- [DEBUG] Вывод кандидатов BM25 --- 
+            print(f"--- [DEBUG] Топ-10 кандидатов BM25 для варианта запроса '{query[:50]}...' ---")
+            top_bm25_indices_debug = np.argsort(bm25_scores)[::-1][:10] 
+            for bm25_idx in top_bm25_indices_debug:
+                score = bm25_scores[bm25_idx]
+                if score > 0: # Показываем только с ненулевой оценкой
+                    title = self.dataset.loc[bm25_idx, 'Заголовок статьи']
+                    print(f"  - Индекс: {bm25_idx}, Оценка BM25: {score:.4f}, Заголовок: {title}")
+            print("---")
+            # --- [DEBUG] Конец вывода BM25 ---
 
             # --- Отбор кандидатов ---
             candidate_indices_unsorted = np.argsort(bm25_scores)
@@ -246,42 +302,112 @@ class Model:
             # ===== Этап 2: Reranking (только для кандидатов) =====
             # ======================================
 
-            # --- BERT семантическое сходство (только для кандидатов) ---
-            bert_similarity_candidates = np.zeros(len(candidate_indices))
-            if self.use_bert and self.bert_embeddings is not None and query_embedding is not None:
-                try:
-                    # Извлекаем эмбеддинги только для кандидатов
-                    candidate_bert_embeddings = self.bert_embeddings[candidate_indices]
-                    # Вычисляем сходство
-                    bert_similarity = cosine_similarity(
-                        [query_embedding],
-                        candidate_bert_embeddings
-                    )[0]
-                    # Проверка на случай возврата некорректной формы
-                    if bert_similarity.shape == (len(candidate_indices),):
-                        bert_similarity_candidates = bert_similarity
-                    else:
-                        print(f"Предупреждение: Неожиданная форма BERT similarity: {bert_similarity.shape}")
-                except Exception as e:
-                    print(f"Ошибка при вычислении BERT сходства для кандидатов: {e}")
-            
-            # --- Нормализация BM25 (только для кандидатов) ---
-            min_bm25_cand = np.min(candidate_bm25_scores)
-            max_bm25_cand = np.max(candidate_bm25_scores)
-            if max_bm25_cand > min_bm25_cand:
-                norm_bm25_scores_candidates = (candidate_bm25_scores - min_bm25_cand) / (max_bm25_cand - min_bm25_cand)
-            else:
-                # Если все оценки BM25 у кандидатов одинаковы
-                norm_bm25_scores_candidates = np.full_like(candidate_bm25_scores, 0.5 if max_bm25_cand > 0 else 0)
+            cross_encoder_scores = None # Инициализируем для хранения оценок CrossEncoder
+            combined_scores_candidates = None # Инициализируем комбинированные оценки
 
-            # --- Комбинированное сходство (только для кандидатов) ---
-            bert_weight = 0.2 
-            if self.use_bert:
-                combined_scores_candidates = (1 - bert_weight) * norm_bm25_scores_candidates + bert_weight * bert_similarity_candidates
-            else:
-                combined_scores_candidates = norm_bm25_scores_candidates
+            # --- Переранжирование с CrossEncoder (если включено) ---
+            # <<< ЗАКОММЕНТИРОВАНО, ЧТОБЫ ВЕРНУТЬСЯ К BERT (Bi-Encoder) >>>
+            # if self.use_cross_encoder and self.cross_encoder:
+            #     try:
+            #         print(f"\n--- [DEBUG] Запуск CrossEncoder для {len(candidate_indices)} кандидатов ---")
+            #         # Формируем пары (запрос, текст кандидата) для CrossEncoder
+            #         cross_inp = [(text, self.dataset.loc[idx, 'combined_text']) for idx in candidate_indices]
+            #         # Получаем оценки от CrossEncoder
+            #         cross_encoder_scores = self.cross_encoder.predict(cross_inp, show_progress_bar=False)
+            #        
+            #         # --- [DEBUG] Вывод сырых оценок CrossEncoder ---
+            #         # print("Сырые оценки CrossEncoder (Топ 10): ...") # Убираем отладку
+            #         # --- [DEBUG] Конец вывода ---
+            #       
+            #         # Используем оценки CrossEncoder как основную меру релевантности ДО контекста
+            #         combined_scores_candidates = cross_encoder_scores 
+            #     except Exception as e:
+            #         print(f"Ошибка при переранжировании CrossEncoder: {e}. Используется Bi-Encoder/BM25.")
+            #         # Если CrossEncoder не сработал, откатываемся к Bi-Encoder/BM25
+            #         # self.use_cross_encoder = False # Отключаем для этого запроса
+            #         cross_encoder_scores = np.zeros(len(candidate_indices)) # Ставим нули, чтобы не мешать отладке
+
+            # --- Переранжирование с Bi-Encoder (SentenceTransformer) + BM25 (если CrossEncoder не используется) ---
+            if combined_scores_candidates is None: # Если CrossEncoder не использовался или не сработал
+                 # --- BERT семантическое сходство (только для кандидатов) ---
+                 bert_similarity_candidates = np.zeros(len(candidate_indices)) 
+                 if self.use_bert and self.bert_embeddings is not None and query_embedding is not None: 
+                     try: 
+                         candidate_bert_embeddings = self.bert_embeddings[candidate_indices] 
+                         bert_similarity = cosine_similarity( 
+                             [query_embedding], 
+                             candidate_bert_embeddings 
+                         )[0] 
+                         if bert_similarity.shape == (len(candidate_indices),): 
+                             bert_similarity_candidates = bert_similarity 
+                         else: 
+                             print(f"Предупреждение: Неожиданная форма BERT similarity: {bert_similarity.shape}") 
+                     except Exception as e: 
+                         print(f"Ошибка при вычислении BERT сходства для кандидатов: {e}")
+ 
+                 # --- Нормализация BM25 (только для кандидатов) ---
+                 # Инициализируем переменную перед if/else на всякий случай
+                 norm_bm25_scores_candidates = np.zeros_like(candidate_bm25_scores) 
+                 min_bm25_cand = np.min(candidate_bm25_scores)
+                 max_bm25_cand = np.max(candidate_bm25_scores)
+                 if max_bm25_cand > min_bm25_cand:
+                     norm_bm25_scores_candidates = (candidate_bm25_scores - min_bm25_cand) / (max_bm25_cand - min_bm25_cand)
+                 else:
+                     norm_bm25_scores_candidates = np.full_like(candidate_bm25_scores, 0.5 if max_bm25_cand > 0 else 0)
+
+                 # --- Комбинированное сходство (только для кандидатов) ---
+                 bert_weight = 0.5 # <<<--- Возвращаем к 0.5, чтобы дать больше веса бонусу за ключевое слово
+                 if self.use_bert:
+                     combined_scores_candidates = (1 - bert_weight) * norm_bm25_scores_candidates + bert_weight * bert_similarity_candidates
+                 else:
+                     combined_scores_candidates = norm_bm25_scores_candidates
+
+            # --- [DEBUG] Вывод сырых оценок кандидатов ПЕРЕД контекстом ---
+            print(f"--- [DEBUG] Топ-{min(10, len(candidate_indices))} кандидатов ПЕРЕД контекстом (Вариант: '{query[:30]}...') ---")
+            # Сортируем индексы кандидатов по их 'сырой' комбинированной оценке
+            sorted_candidate_indices_before_context = candidate_indices[np.argsort(combined_scores_candidates)[::-1]]
+            sorted_combined_scores_before_context = np.sort(combined_scores_candidates)[::-1]
+            # Берем BM25 и BERT/CE оценки для отсортированных кандидатов
+            sorted_bm25_scores_before_context = bm25_scores[sorted_candidate_indices_before_context]
+            if self.use_cross_encoder and cross_encoder_scores is not None:
+                # Если есть CE, берем его оценки (они и есть combined_scores_candidates)
+                sorted_ce_scores_before_context = sorted_combined_scores_before_context
+                sorted_bert_scores_before_context = np.zeros_like(sorted_ce_scores_before_context) # BERT не используется напрямую
+            elif self.use_bert and 'bert_similarity_candidates' in locals() and bert_similarity_candidates is not None:
+                # Если есть BERT, берем его оценки
+                # Нужен пересчет индексов, так как bert_similarity_candidates имеет порядок candidate_indices
+                original_indices_map = {idx: i for i, idx in enumerate(candidate_indices)}
+                # Проверка на случай, если sorted_candidate_indices_before_context пуст
+                if len(sorted_candidate_indices_before_context) > 0:
+                    bert_indices_to_fetch = [original_indices_map[idx] for idx in sorted_candidate_indices_before_context]
+                    # Проверка валидности индексов
+                    if all(i < len(bert_similarity_candidates) for i in bert_indices_to_fetch):
+                       sorted_bert_scores_before_context = bert_similarity_candidates[bert_indices_to_fetch]
+                    else:
+                       print("Предупреждение: Невалидные индексы для bert_similarity_candidates.")
+                       sorted_bert_scores_before_context = np.zeros_like(sorted_combined_scores_before_context)
+                else:
+                    sorted_bert_scores_before_context = np.zeros_like(sorted_combined_scores_before_context)
+
+                sorted_ce_scores_before_context = np.zeros_like(sorted_bert_scores_before_context) # CE не используется
+            else: # Если ни BERT ни CE не используются (только BM25)
+                sorted_bert_scores_before_context = np.zeros_like(sorted_combined_scores_before_context)
+                sorted_ce_scores_before_context = np.zeros_like(sorted_combined_scores_before_context)
+
+            for i in range(min(10, len(sorted_candidate_indices_before_context))):
+                idx = sorted_candidate_indices_before_context[i]
+                raw_score = sorted_combined_scores_before_context[i]
+                # Обеспечиваем наличие переменных перед использованием
+                bm25_s = sorted_bm25_scores_before_context[i] if i < len(sorted_bm25_scores_before_context) else 0
+                bert_s = sorted_bert_scores_before_context[i] if i < len(sorted_bert_scores_before_context) else 0
+                ce_s = sorted_ce_scores_before_context[i] if i < len(sorted_ce_scores_before_context) else 0
+                title = self.dataset.loc[idx, 'Заголовок статьи']
+                print(f"  - Индекс: {idx}, Сырой Score: {raw_score:.4f} (BM25: {bm25_s:.4f}, BERT: {bert_s:.4f}, CE: {ce_s:.4f}), Заголовок: {title}")
+            print("---")
+            # --- [DEBUG] Конец вывода сырых оценок ---
 
             # --- Применение контекстных весов (только для кандидатов) ---
+            # Применяется к combined_scores_candidates, полученным либо от CrossEncoder, либо от BiEncoder/BM25
             scores_with_context_candidates = self._apply_context_weights(
                 combined_scores_candidates, # Оценки только кандидатов
                 query_type,
@@ -289,7 +415,7 @@ class Model:
                 component,
                 text,
                 indices=candidate_indices # Передаем индексы кандидатов
-            )
+            ) # Теперь применяем контекст ВСЕГДА, даже для CrossEncoder
 
             # Применение веса варианта запроса и отбор кандидатов
             final_scores_variant = np.zeros(num_docs) # Начинаем с нулей
@@ -302,8 +428,9 @@ class Model:
             variant_candidate_data = {
                 'indices': candidate_indices.copy(),
                 'bm25': candidate_bm25_scores.copy(),
-                'bert': bert_similarity_candidates.copy(),
-                'combined': combined_scores_candidates.copy(),
+                'bert': bert_similarity_candidates.copy() if not (self.use_cross_encoder and cross_encoder_scores is not None) else np.zeros(len(candidate_indices)), # Сохраняем BERT только если НЕ CrossEncoder
+                'cross_encoder': cross_encoder_scores.copy() if (self.use_cross_encoder and cross_encoder_scores is not None) else np.zeros(len(candidate_indices)), # Сохраняем CrossEncoder если использовался
+                'combined': combined_scores_candidates.copy(), # Это будет либо CrossEncoder score, либо BiEncoder+BM25
                 'context': scores_with_context_candidates.copy(),
                 'final_cand_score': candidate_final_scores.copy()
             }
@@ -319,6 +446,7 @@ class Model:
             final_debug_scores = { 
                 'bm25': np.zeros(num_docs),
                 'bert': np.zeros(num_docs),
+                'cross_encoder': np.zeros(num_docs),
                 'combined_initial': np.zeros(num_docs),
                 'context_weighted': np.zeros(num_docs)
             }
@@ -333,8 +461,10 @@ class Model:
                         # Заполняем debug оценки
                         final_debug_scores['bm25'][doc_idx] = candidate_data['bm25'][local_idx]
                         final_debug_scores['bert'][doc_idx] = candidate_data['bert'][local_idx]
-                        final_debug_scores['combined_initial'][doc_idx] = candidate_data['combined'][local_idx]
-                        final_debug_scores['context_weighted'][doc_idx] = candidate_data['context'][local_idx]
+                        final_debug_scores['cross_encoder'][doc_idx] = candidate_data['cross_encoder'][local_idx]
+                        final_debug_scores['combined_initial'][doc_idx] = candidate_data['combined'][local_idx] # Это будет оценка CE если он использовался
+                        # Если контекст не применялся для CE, то context_weighted будет равен combined_initial
+                        final_debug_scores['context_weighted'][doc_idx] = candidate_data['context'][local_idx] 
                     except IndexError: # Если документ не найден среди кандидатов (не должно происходить, но для безопасности)
                         print(f"Предупреждение: Документ {doc_idx} не найден среди кандидатов варианта {variant_idx}, хотя имеет max_score > 0.")
         else:
@@ -343,6 +473,7 @@ class Model:
             final_debug_scores = {
                 'bm25': np.zeros(num_docs),
                 'bert': np.zeros(num_docs),
+                'cross_encoder': np.zeros(num_docs),
                 'combined_initial': np.zeros(num_docs),
                 'context_weighted': np.zeros(num_docs)
             }
@@ -438,9 +569,9 @@ class Model:
             weighted_similarity = similarity.copy() 
 
         # --- Мультипликативные факторы для контекста ---
-        type_boost_factor = 0.05
-        role_boost_factor = 0.08
-        component_boost_factor = 0.05
+        type_boost_factor = 0.03 # Уменьшаем общие бонусы
+        role_boost_factor = 0.04
+        component_boost_factor = 0.03
         # -------------------------------------------
 
         # Применение весов (итерируемся по индексам из similarity/indices_to_process)
@@ -468,31 +599,114 @@ class Model:
             # Получаем лемматизированные ключевые слова из запроса (без стоп-слов)
             try:
                 query_tokens = word_tokenize(re.sub(r'[^\w\s]', ' ', text_lower))
-                query_keywords = [
+                query_keywords = { # Используем set для быстрой проверки
                     self.text_processor.lemmatize(token) 
                     for token in query_tokens 
                     if token not in self.text_processor.stop_words and len(token) > 1
-                ]
+                }
             except Exception as e:
-                print(f"Ошибка токенизации/лемматизации запроса для бонуса заголовка: {e}")
-                query_keywords = []
+                print(f"Ошибка токенизации/лемматизации запроса для бонуса: {e}")
+                query_keywords = set()
             
             # Если найдены ключевые слова, повышаем релевантность документов,
             # заголовок которых содержит эти слова
             if query_keywords:
-                title_boost_factor = 0.1 # <<<--- Мультипликативный бонус за заголовок ---<<<
+                # --- Скорректированные и новые бонусы ---
+                # Бонусы за "прайслист" (остаются уменьшенными)
+                pricelist_lemma = self.text_processor.lemmatize("прайслист")
+                title_boost_pricelist = 0.2
+                body_boost_pricelist = 0.05
+
+                # Бонусы за "обновление" (ЕЩЕ УВЕЛИЧЕНЫ)
+                update_lemma = self.text_processor.lemmatize("обновление")
+                update_synonyms_lemmas = {
+                    update_lemma,
+                    self.text_processor.lemmatize("изменение"),
+                    self.text_processor.lemmatize("загрузка"), # Часто используется в контексте прайсов
+                    self.text_processor.lemmatize("замена"),
+                    self.text_processor.lemmatize("редактирование")
+                }
+                title_boost_update = 0.6  # Увеличено с 0.4
+                body_boost_update = 0.25 # Увеличено с 0.15
+
+                # !!! НОВЫЙ КОМБИНИРОВАННЫЙ БОНУС !!!
+                combined_boost_title = 0.8 # Сильный бонус, если ОБА слова в ЗАГОЛОВКЕ
+                combined_boost_body = 0.4  # Бонус, если ОБА слова в ТЕЛЕ (и не в заголовке)
+
+                # Бонус за общие ключевые слова (остается маленьким)
+                general_keyword_boost = 0.05
+
+
                 # Снова итерируемся по индексам
                 for k, doc_idx in enumerate(indices_to_process):
+                    # Используем исходную similarity[k] для проверки > 0, чтобы избежать умножения нуля
+                    # и проверяем валидность индекса k
+                    if k >= len(similarity) or similarity[k] <= 0:
+                        continue # Пропускаем, если нет оценки или она нулевая
+
                     title = self.dataset.iloc[doc_idx]['Заголовок статьи'].lower()
-                    # Проверяем наличие любого ключевого слова из запроса в заголовке
-                    if any(keyword in title for keyword in query_keywords):
-                        # Применяем бонус только один раз, даже если несколько слов совпало
-                        # Используем исходную similarity[k] для проверки > 0, чтобы избежать умножения нуля
-                        if k < len(similarity) and similarity[k] > 0: 
-                           weighted_similarity[k] *= (1 + title_boost_factor)
-        
+                    body_text = self.dataset.loc[doc_idx, 'combined_text'].lower()
+
+                    # Лемматизируем заголовок один раз
+                    try:
+                        title_tokens = word_tokenize(re.sub(r'[^a-zA-Zа-яА-Я0-9\\s]', ' ', title, flags=re.UNICODE))
+                        title_lemmas = {self.text_processor.lemmatize(token) for token in title_tokens}
+                    except Exception as e:
+                        print(f"Ошибка лемматизации заголовка {doc_idx} для бонуса: {e}")
+                        title_lemmas = set()
+
+                    # --- Проверка наличия ключевых лемм ---
+                    has_pricelist_in_title = pricelist_lemma in title_lemmas
+                    has_update_in_title = any(lemma in title_lemmas for lemma in update_synonyms_lemmas)
+
+                    # Проверка в теле (простая, без полной лемматизации тела для скорости)
+                    try:
+                        has_pricelist_in_body = pricelist_lemma in body_text
+                    except TypeError:
+                        has_pricelist_in_body = False
+                    try:
+                        has_update_in_body = any(lemma in body_text for lemma in update_synonyms_lemmas)
+                    except TypeError:
+                        has_update_in_body = False
+
+                    has_general_keywords_in_title = any(keyword in title_lemmas for keyword in query_keywords)
+
+                    # --- Применение мультипликативных бонусов ---
+                    current_boost = 1.0 # Начинаем с нейтрального множителя
+
+                    # 1. Самый сильный бонус: ОБА слова в ЗАГОЛОВКЕ
+                    if has_pricelist_in_title and has_update_in_title:
+                        current_boost *= (1 + combined_boost_title)
+                    # 2. Сильные бонусы: одно из ТОЧНЫХ слов в ЗАГОЛОВКЕ (если не было комбинации выше)
+                    elif has_pricelist_in_title:
+                         current_boost *= (1 + title_boost_pricelist)
+                    elif has_update_in_title:
+                         current_boost *= (1 + title_boost_update)
+
+                    # 3. Средний бонус: ОБА слова в ТЕЛЕ (и не было комбинации или точных слов в заголовке)
+                    elif not has_pricelist_in_title and not has_update_in_title and \
+                         has_pricelist_in_body and has_update_in_body:
+                         current_boost *= (1 + combined_boost_body)
+
+                    # 4. Слабые бонусы: одно из ТОЧНЫХ слов в ТЕЛЕ (и не было его в заголовке, и не было комбинации в теле)
+                    elif not has_pricelist_in_title and not (has_pricelist_in_body and has_update_in_body) and \
+                         has_pricelist_in_body:
+                         current_boost *= (1 + body_boost_pricelist)
+                    elif not has_update_in_title and not (has_pricelist_in_body and has_update_in_body) and \
+                         has_update_in_body:
+                        current_boost *= (1 + body_boost_update)
+
+                    # 5. Самый слабый бонус: ОБЩИЕ слова в ЗАГОЛОВКЕ (если не было никаких точных совпадений в заголовке/теле)
+                    elif not has_pricelist_in_title and not has_update_in_title and \
+                         not has_pricelist_in_body and not has_update_in_body and \
+                         has_general_keywords_in_title:
+                        current_boost *= (1 + general_keyword_boost)
+
+                    # Применяем итоговый буст к оценке
+                    weighted_similarity[k] *= current_boost
+
         # Убедимся, что оценки не превышают 1.0 (из-за возможных неточностей float)
-        np.clip(weighted_similarity, 0, 1.0, out=weighted_similarity)
+        # np.clip(weighted_similarity, 0, 1.0, out=weighted_similarity) # <-- Закомментировано для отладки
 
         return weighted_similarity
 
@@ -867,6 +1081,7 @@ class Model:
         # Временно отключаем BERT модель и LLM для сериализации
         bert_model_tmp = None
         llm_tmp = None
+        cross_encoder_tmp = None
         
         if self.use_bert:
             bert_model_tmp = self.bert_model
@@ -875,6 +1090,10 @@ class Model:
         if self.use_llm:
             llm_tmp = self.llm
             self.llm = None
+        
+        if self.use_cross_encoder:
+            cross_encoder_tmp = self.cross_encoder
+            self.cross_encoder = None
         
         # Сохранение модели
         with open(model_path, 'wb') as f:
@@ -886,6 +1105,9 @@ class Model:
             
         if llm_tmp is not None:
             self.llm = llm_tmp
+        
+        if cross_encoder_tmp is not None:
+            self.cross_encoder = cross_encoder_tmp
         
         print(f"Модель сохранена в {model_path}")
 
@@ -920,6 +1142,15 @@ class Model:
             except Exception as e:
                 print(f"Не удалось загрузить LLM модель: {e}")
                 model.use_llm = False
+        
+        # Если нужно, восстанавливаем CrossEncoder модель
+        if model.use_cross_encoder:
+            try:
+                model.cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+                print("CrossEncoder модель успешно загружена.")
+            except Exception as e:
+                print(f"Не удалось загрузить CrossEncoder модель: {e}. Переранжирование с CrossEncoder отключено.")
+                model.use_cross_encoder = False
                 
         return model
 
@@ -938,7 +1169,7 @@ if __name__ == "__main__":
         if retrain or not os.path.exists(model_path):
             print(f"Создание и обучение новой модели...")
             # Создание модели
-            model = Model(dataset_path, use_bert=True, use_llm=True)
+            model = Model(dataset_path, use_bert=True, use_llm=True, use_cross_encoder=True)
             print(f"Время загрузки данных: {time.time() - start_time:.2f} с")
             
             # Обучение модели
@@ -953,9 +1184,20 @@ if __name__ == "__main__":
             model = Model.load_model(model_path)
             print(f"Время загрузки модели: {time.time() - start_time:.2f} с")
         
-        # Выполнение поиска
+        # --- УДАЛЕНО: Не нужно пересоздавать модель после загрузки --- 
+        # Загруженная модель уже содержит обученные компоненты (включая BM25)
+        # Если нужно изменить флаг для теста, можно сделать это напрямую:
+        # model.use_cross_encoder = True # или False
+        # И при необходимости дозагрузить саму модель CrossEncoder:
+        # if model.use_cross_encoder and model.cross_encoder is None:
+        #    try:
+        #        model.cross_encoder = CrossEncoder(...) 
+        #    except: ... 
+ 
+        # Выполнение поиска 
         start_time = time.time()
         print(f"\nЗапрос: '{query}'")
+        print(f"Режим переранжирования: {'CrossEncoder' if model.use_cross_encoder else 'BiEncoder + BM25'}")
         
         # Анализ запроса
         query_analysis = model.text_processor.classify_query(query)

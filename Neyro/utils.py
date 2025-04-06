@@ -385,25 +385,57 @@ class TextProcessor:
             List[str]: Список вариантов запроса
         """
         expanded_terms = []  # Создаем пустой список для расширенных терминов
+        text_lower = text.lower()
         
         # Обработка аббревиатур и их полных форм
         for abbr, full_form in self.abbreviations.items():  # Перебираем аббревиатуры и их полные формы
-            if abbr.lower() in text.lower():  # Если аббревиатура найдена в тексте
+            if abbr.lower() in text_lower:  # Если аббревиатура найдена в тексте
                 expanded_terms.append(full_form)  # Добавляем полную форму
-            elif full_form in text.lower():  # Если полная форма найдена в тексте
+            elif full_form in text_lower:  # Если полная форма найдена в тексте
                 expanded_terms.append(abbr.lower())  # Добавляем аббревиатуру
         
         # Поиск терминов из предметной области
         for entity_list in self.domain_entities.values():  # Перебираем списки сущностей
             for entity in entity_list:  # Перебираем сущности
-                if entity in text.lower():  # Если сущность найдена в тексте
+                if entity in text_lower:  # Если сущность найдена в тексте
                     # Добавляем синонимы и связанные термины
                     for category, terms in self.domain_entities.items():  # Перебираем категории
                         for term in terms:  # Перебираем термины
                             if entity in term and entity != term:  # Если термин содержит сущность, но не равен ей
                                 expanded_terms.append(term)  # Добавляем термин
         
-        return expanded_terms  # Возвращаем расширенные термины
+        # === Добавление синонимов и связанных понятий ===
+        synonyms = {
+            "прайслист": ["каталог_цен", "список_товаров", "номенклатура", "цены", "yml"],
+            "оферта": ["предложение", "сте"],
+            "контракт": ["договор", "соглашение"],
+            "заявка": ["запрос"],
+            "упд": ["универсальный_передаточный_документ"],
+            "кс": ["котировочная_сессия"],
+            "электронная_подпись": ["эп", "эцп", "сертификат"],
+            "магазин": ["портал"]
+        }
+        
+        # Сначала нормализуем текст запроса для поиска ключей
+        normalized_query_text = text_lower
+        normalized_query_text = re.sub(r'прайс[-\\s]?лист', 'прайслист', normalized_query_text)
+        
+        found_keys = set() # Чтобы не добавлять синонимы несколько раз
+        for key_term in synonyms.keys():
+            if key_term in normalized_query_text:
+                found_keys.add(key_term)
+                # Добавляем сам ключ (на всякий случай, если его нет)
+                expanded_terms.append(key_term)
+                # Добавляем его синонимы
+                for synonym in synonyms[key_term]:
+                    expanded_terms.append(synonym)
+                    
+        # Если нашли прайслист, добавим связанные действия
+        if "прайслист" in found_keys:
+            expanded_terms.extend(["загрузка_прайслиста", "обновление_цен", "импорт_yml"]) 
+        
+        # Возвращаем уникальные добавленные термины
+        return list(set(expanded_terms))
 
     def check_query_spelling(self, query):
         """
@@ -459,11 +491,13 @@ class TextProcessor:
         Returns:
             str: Обработанный текст, готовый для векторизации
         """
+        print(f"\n--- [DEBUG preprocess_text] --- Входной текст: '{text[:100]}...'") # Отладка
         if pd.isna(text):  # Если текст пустой (NaN)
             return ""  # Возвращаем пустую строку
         
         # Сначала исправляем запрос полностью - это поможет исправить ошибки до дальнейшей обработки
-        corrected_text, _ = self.check_query_spelling(text)
+        corrected_text, corrections = self.check_query_spelling(text)
+        print(f"--- [DEBUG preprocess_text] --- После check_query_spelling: '{corrected_text[:100]}...'") # Отладка
         
         # Если текст был исправлен, используем его для дальнейшей обработки
         if corrected_text != text:
@@ -479,12 +513,14 @@ class TextProcessor:
         expanded_terms = self.expand_query(str(text))  # Расширяем запрос
         
         # Нормализация текста
-        text = str(text).lower()  # Приводим текст к нижнему регистру
-        text = re.sub(r'[^\\w\\s]', ' ', text)  # Заменяем все символы, кроме букв, цифр и пробелов, на пробелы
+        text_norm = str(text).lower()  # Приводим текст к нижнему регистру
+        text_norm = re.sub(r'[^a-zA-Zа-яА-Я0-9\s]', ' ', text_norm, flags=re.UNICODE) # Более явный regex
+        print(f"--- [DEBUG preprocess_text] --- После lower() и re.sub(): '{text_norm[:100]}...'") # Отладка
         
         # Токенизация
         try:
-            tokens = word_tokenize(text)  # Разбиваем текст на слова
+            tokens = word_tokenize(text_norm)  # Разбиваем нормализованный текст на слова
+            print(f"--- [DEBUG preprocess_text] --- Токены (первые 20): {tokens[:20]}") # Отладка
         except:
             return ""  # Возвращаем пустую строку
 
@@ -508,11 +544,14 @@ class TextProcessor:
         # Удаление стоп-слов и лемматизация
         processed_tokens = []  # Создаем пустой список для обработанных токенов
         for token in tokens:  # Перебираем токены
+            # --- Восстанавливаем удаление стоп-слов --- 
             if token not in self.stop_words:  # Если токен не является стоп-словом
                 processed_tokens.append(self.lemmatize(token))  # Лемматизируем и добавляем в список
+            # -------------------------------------
                 
         # Формирование результата
         result = ' '.join(processed_tokens)  # Объединяем обработанные токены в строку
+        print(f"--- [DEBUG preprocess_text] --- Результат после join (до сущностей): '{result[:100]}...'") # Отладка
         
         # Добавление n-грамм и предметных сущностей
         if ngrams_found:  # Если найдены n-граммы
@@ -534,8 +573,37 @@ class TextProcessor:
         if expanded_terms:  # Если есть расширенные термины
             result += ' ' + ' '.join([term.replace(' ', '_') for term in expanded_terms])  # Добавляем термины, заменяя пробелы на подчеркивания
             
-        return result  # Возвращаем обработанный текст
+        print(f"--- [DEBUG preprocess_text] --- Итоговый результат: '{result[:100]}...'") # Отладка
+        return result.strip()  # Возвращаем обработанный текст
         
+    def _preprocess_for_bm25(self, text: str) -> List[str]:
+        """
+        Упрощенная предобработка текста ТОЛЬКО для BM25.
+        Возвращает список лемматизированных токенов (без стоп-слов).
+        """
+        if pd.isna(text):
+            return []
+
+        # 1. Нижний регистр и удаление пунктуации
+        text_norm = str(text).lower()
+        text_norm = re.sub(r'[^a-zA-Zа-яА-Я0-9\s]', ' ', text_norm, flags=re.UNICODE)
+
+        # 2. Токенизация
+        try:
+            tokens = word_tokenize(text_norm)
+        except Exception as e:
+            print(f"Ошибка токенизации в _preprocess_for_bm25: {e}")
+            return []
+
+        # 3. Удаление стоп-слов и лемматизация
+        processed_tokens = []
+        for token in tokens:
+            if token not in self.stop_words and len(token) > 1: # Проверяем стоп-слова и длину > 1
+                lemmatized = self.lemmatize(token)
+                processed_tokens.append(lemmatized)
+                
+        return processed_tokens
+
     def classify_query(self, text):
         """
         Классификация запроса пользователя
