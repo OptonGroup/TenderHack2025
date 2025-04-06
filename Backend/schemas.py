@@ -1,6 +1,7 @@
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
+import uuid
 
 
 class Token(BaseModel):
@@ -251,9 +252,9 @@ class DataBase(BaseModel):
     description: Optional[str] = None
 
 
-class DataCreate(DataBase):
-    """Данные для создания записи в модели Data"""
-    pass
+class DataCreate(BaseModel):
+    """Данные для создания записи Data"""
+    question: str
 
 
 class DataUpdate(BaseModel):
@@ -292,6 +293,12 @@ class ChatRating(ChatRatingBase):
     
     class Config:
         from_attributes = True
+
+
+class AIQueryResponse(BaseModel):
+    """Схема ответа от эндпоинта /api/ai-query"""
+    answer: str
+    needs_operator: bool = False
 
 
 # Решаем проблему циклических ссылок

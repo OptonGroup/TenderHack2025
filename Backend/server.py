@@ -19,6 +19,8 @@ from pydantic import validate_arguments
 import pandas as pd
 import logging
 import json
+import requests
+import urllib.parse
 
 from database import get_db, init_db
 import models
@@ -987,7 +989,68 @@ async def delete_data(
     }
 
 
-# Эндпоинт для импорта данных из parquet-файла
+# Эндпоинт для запроса к AI
+@app.post("/api/ai-query", response_model=schemas.AIQueryResponse)
+async def query_ai_service(
+    request: Request,
+    payload: Dict[str, str] = Body(...),
+    current_user: models.User = Depends(get_api_user)
+):
+    """
+    Отправляет запрос пользователя к внешнему AI-сервису и возвращает ответ.
+    """
+    user_query = payload.get("query")
+    if not user_query:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Параметр 'query' обязателен."
+        )
+
+    ai_service_url = "http://localhost:7777/query"
+    encoded_query = urllib.parse.quote(user_query)
+    full_url = f"{ai_service_url}?query={encoded_query}"
+
+    logger.info(f"Запрос к AI сервису: {full_url} от пользователя {current_user.id}")
+
+    try:
+        response = requests.get(full_url, headers={'accept': 'application/json'}, timeout=30)
+        response.raise_for_status()
+
+        ai_response = response.json()
+        answer = ai_response.get("answer", "Извините, не удалось получить ответ от AI.")
+        # Получаем флаг needs_operator из ответа AI сервиса
+        needs_operator_flag = ai_response.get("query_analysis", {}).get("needs_operator", False)
+
+        logger.info(f"Успешный ответ от AI сервиса для пользователя {current_user.id}. Needs Operator: {needs_operator_flag}")
+        return {"answer": answer, "needs_operator": needs_operator_flag}
+
+    except requests.exceptions.Timeout:
+        logger.error(f"Ошибка: Таймаут при запросе к AI сервису {full_url}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="AI сервис не ответил вовремя."
+        )
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при запросе к AI сервису {full_url}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось связаться с AI сервисом: {str(e)}"
+        )
+    except json.JSONDecodeError:
+        logger.error(f"Ошибка: Невалидный JSON ответ от AI сервиса {full_url}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI сервис вернул некорректный ответ."
+        )
+    except Exception as e:
+        logger.error(f"Непредвиденная ошибка при запросе к AI сервису: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Внутренняя ошибка сервера при обработке запроса к AI: {str(e)}"
+        )
+
+
+# Эндпоинты для импорта данных
 @app.post("/api/import-parquet", response_model=Dict[str, Any])
 async def import_parquet(
     background_tasks: BackgroundTasks,

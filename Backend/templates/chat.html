@@ -657,22 +657,34 @@
                 const userMessageData = await api.sendChatMessage(currentChatId, message);
                 console.log('Сообщение пользователя сохранено:', userMessageData);
                 
-                // Получаем ответ от AI (временная заглушка)
-                const aiResponse = await requestAIResponse(message);
+                // Получаем ответ от AI
+                const aiResponse = await requestAIResponse(message); // Теперь возвращает { answer: "...", needs_operator: true/false }
                 
                 // Скрываем индикатор набора
                 hideTypingIndicator();
                 
                 // Добавляем ответ бота в интерфейс
-                addMessage(aiResponse.message, true, aiResponse.id);
+                // Генерируем временный ID для кнопок лайк/дизлайк до сохранения на сервере
+                const tempBotMessageId = 'temp_' + Date.now(); 
+                addMessage(aiResponse.answer, true, tempBotMessageId);
                 
                 // Сохраняем ответ бота на сервере
                 console.log('Отправка ответа бота на сервер');
-                const botMessageData = await api.sendChatMessage(currentChatId, aiResponse.message, true);
+                // Отправляем фактический ответ AI и сохраняем ID, возвращенный сервером
+                const botMessageData = await api.sendChatMessage(currentChatId, aiResponse.answer, true);
                 console.log('Ответ бота сохранен:', botMessageData);
-                
-                // Проверяем на запрос оператора после ответа от AI
-                checkForOperatorRequest(message);
+
+                // Обновляем data-message-id у кнопок лайк/дизлайк, если сообщение было успешно сохранено
+                if (botMessageData && botMessageData.id) {
+                     const feedbackBtns = chatBody.querySelectorAll(`[data-message-id="${tempBotMessageId}"]`);
+                     feedbackBtns.forEach(btn => btn.setAttribute('data-message-id', botMessageData.id));
+                }
+
+                // Проверяем флаг needs_operator ИЛИ ключевые фразы
+                if (aiResponse.needs_operator || checkForOperatorRequest(message)) {
+                     console.log('AI определил необходимость оператора или найдена ключевая фраза.');
+                     showOperatorButton(); // Показываем кнопку вызова оператора
+                }
                 
                 // Обновляем список чатов
                 await updateChatList();
@@ -786,13 +798,23 @@
         }
         
         // Добавление сообщения в чат
-        function addMessage(content, isBot, messageId) {
+        function addMessage(content, isBot, messageId = null) {
             const message = document.createElement('div');
             message.className = `message message-${isBot ? 'bot' : 'user'}`;
             
             const messageContent = document.createElement('div');
             messageContent.className = 'message-content';
-            messageContent.innerHTML = `<p class="mb-0">${content}</p>`;
+            
+            // Форматируем ответ бота
+            if (isBot) {
+                messageContent.innerHTML = formatAIResponse(content);
+            } else {
+                // Для сообщений пользователя просто выводим текст
+                const p = document.createElement('p');
+                p.className = 'mb-0';
+                p.textContent = content;
+                messageContent.appendChild(p);
+            }
             
             const messageMeta = document.createElement('div');
             messageMeta.className = 'message-meta';
@@ -839,6 +861,68 @@
             
             // Прокручиваем чат вниз
             chatBody.scrollTop = chatBody.scrollHeight;
+        }
+        
+        // Функция для форматирования ответа AI
+        function formatAIResponse(rawResponse) {
+            let htmlContent = '';
+            const parts = rawResponse.split('\\n\\n'); // Разделяем по двойному переносу строки
+
+            parts.forEach(part => {
+                part = part.trim().replace(/\\n/g, '<br>'); // Заменяем одинарные переносы на <br>
+                
+                if (part.startsWith('Инструкция по вашему запросу:')) {
+                    htmlContent += `<p><strong>${part.substring(0, 29)}</strong>${part.substring(29)}</p>`;
+                } else if (part.startsWith('Источник:')) {
+                    const sourceText = part.substring(9).trim();
+                    // Создаем ссылку на страницу поиска в базе знаний
+                    const searchUrl = `/knowledge?search=${encodeURIComponent(sourceText)}`;
+                    htmlContent += `<p><strong>Источник:</strong> <a href="${searchUrl}" target="_blank">${sourceText}</a></p>`;
+                } else if (part.startsWith('Дополнительная информация:')) {
+                    // Начинаем список для дополнительной информации
+                    htmlContent += `<p><strong>Дополнительная информация:</strong></p><ul>`;
+                } else if (htmlContent.includes('<ul>')) {
+                    // Если мы внутри списка, добавляем как элемент списка
+                    // Проверяем, не является ли это следующим источником
+                    if (part.startsWith('Источник:')) {
+                        // Закрываем предыдущий li и добавляем источник
+                        const sourceText = part.substring(9).trim();
+                        const searchUrl = `/knowledge?search=${encodeURIComponent(sourceText)}`;
+                         htmlContent += `</li><li><strong>Источник:</strong> <a href="${searchUrl}" target="_blank">${sourceText}</a>`;
+                    } else if (part.trim()) {
+                         // Начинаем новый li для информации
+                         htmlContent += `<li>${part}`; 
+                    }
+                } else if (part.trim()) {
+                    // Если это не специальная часть, просто добавляем как параграф
+                    htmlContent += `<p>${part}</p>`;
+                }
+            });
+            
+            // Закрываем ul, если он был открыт
+            if (htmlContent.includes('<ul>') && !htmlContent.endsWith('</ul>')) {
+                 if (htmlContent.endsWith('</li>')) { // Если последний элемент был li, просто закрываем ul
+                    htmlContent += '</ul>';
+                 } else { // Иначе закрываем последний li и ul
+                     htmlContent += '</li></ul>';
+                 }
+            }
+
+            // Заменяем маркеры типа "1) ", "2) " на элементы нумерованного списка <ol>
+             htmlContent = htmlContent.replace(/<p>(\d+)\) (.*?)<\/p>/g, (match, number, text) => {
+                if (number === '1') {
+                    return `<ol><li>${text}</li>`;
+                } else {
+                    return `<li>${text}</li>`;
+                }
+            });
+            // Закрываем <ol>, если он был открыт
+            if (htmlContent.includes('<ol><li>') && !htmlContent.includes('</ol>')) {
+                 htmlContent = htmlContent.replace(/(<\/li>)(?!.*<\/li>)/, '$1</ol>');
+            }
+
+
+            return htmlContent;
         }
         
         // Показать индикатор набора
@@ -1223,85 +1307,51 @@
             chatTitle.appendChild(operatorBadge);
         }
         
-        // Переопределяем функцию отправки сообщения для режима оператора
-        async function sendMessage() {
-            const message = chatInputTextarea.value.trim();
-            if (!message) return;
-            
-            // Очищаем поле ввода
-            chatInputTextarea.value = '';
-            chatInputTextarea.style.height = 'auto';
-            
+        // Запрос ответа от AI
+        async function requestAIResponse(userMessage) {
+            // Убираем заглушку
+            // console.log('Запрос ответа от AI (временная заглушка)');
+            // return new Promise(resolve => {
+            //     setTimeout(() => {
+            //         resolve({ 
+            //             id: Date.now(),
+            //             message: `Это автоматический ответ на ваше сообщение: "${userMessage}"`,
+            //             needs_operator: false
+            //         });
+            //     }, 1500); 
+            // });
+
+            // Вызываем новый API эндпоинт
             try {
-                // Добавляем сообщение пользователя в интерфейс
-                addMessage(message, false);
-                
-                // Показываем индикатор набора
-                showTypingIndicator();
-                
-                // Сохраняем сообщение пользователя на сервере
-                console.log('Отправка сообщения пользователя на сервер, chatId:', currentChatId);
-                const userMessageData = await api.sendChatMessage(currentChatId, message);
-                console.log('Сообщение пользователя сохранено:', userMessageData);
-                
-                // Получаем ответ от AI (временная заглушка)
-                const aiResponse = await requestAIResponse(message);
-                
-                // Скрываем индикатор набора
-                hideTypingIndicator();
-                
-                // Добавляем ответ бота в интерфейс
-                addMessage(aiResponse.message, true, aiResponse.id);
-                
-                // Сохраняем ответ бота на сервере
-                console.log('Отправка ответа бота на сервер');
-                const botMessageData = await api.sendChatMessage(currentChatId, aiResponse.message, true);
-                console.log('Ответ бота сохранен:', botMessageData);
-                
-                // Проверяем на запрос оператора после ответа от AI
-                checkForOperatorRequest(message);
-                
-                // Обновляем список чатов
-                await updateChatList();
-                
+                console.log(`Запрос к /api/ai-query с сообщением: "${userMessage}"`);
+                const response = await fetch("/api/ai-query", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${api.token}`, // Используем токен из api.js
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ query: userMessage })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('Ошибка при запросе к AI сервису:', response.status, errorData);
+                    throw new Error(errorData.detail || 'Ошибка при получении ответа от AI');
+                }
+
+                const data = await response.json(); // Теперь data содержит { answer: "...", needs_operator: true/false }
+                console.log('Получен ответ от AI сервиса:', data);
+                return data; // Возвращаем весь объект
+
             } catch (error) {
-                console.error('Error sending message:', error);
-                hideTypingIndicator();
-                showToast('Ошибка при отправке сообщения: ' + error.message, 'error');
+                console.error('Ошибка при вызове AI сервиса:', error);
+                // Возвращаем сообщение об ошибке и флаг needs_operator = false
+                return { 
+                    answer: `Извините, произошла ошибка при обращении к AI. (${error.message})`, 
+                    needs_operator: false 
+                };
             }
-        }
-        
-        // Добавляем функцию для отображения сообщения оператора
-        function addOperatorMessage(content, messageId) {
-            const message = document.createElement('div');
-            message.className = 'message message-operator';
-            
-            const messageContent = document.createElement('div');
-            messageContent.className = 'message-content';
-            messageContent.innerHTML = `<p class="mb-0">${content}</p>`;
-            
-            const messageMeta = document.createElement('div');
-            messageMeta.className = 'message-meta';
-            
-            const messageTime = document.createElement('div');
-            messageTime.className = 'message-time';
-            messageTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
-            // Добавляем метку оператора
-            const operatorLabel = document.createElement('div');
-            operatorLabel.className = 'message-time ms-2';
-            operatorLabel.innerHTML = '<i class="fas fa-headset me-1"></i>оператор';
-            
-            messageMeta.appendChild(messageTime);
-            messageMeta.appendChild(operatorLabel);
-            
-            message.appendChild(messageContent);
-            message.appendChild(messageMeta);
-            
-            chatBody.appendChild(message);
-            
-            // Прокручиваем чат вниз
-            chatBody.scrollTop = chatBody.scrollHeight;
         }
         
         // Модифицируем функцию загрузки истории чата для отображения сообщений оператора
