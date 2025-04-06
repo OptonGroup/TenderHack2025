@@ -72,7 +72,7 @@ async def cmd_help(message: types.Message):
         "/login - Войти в систему"
     )
 
-# Обработчик команды /register
+
 @dp.message(Command("register"))
 async def cmd_register(message: types.Message, state: FSMContext):
     """
@@ -81,7 +81,7 @@ async def cmd_register(message: types.Message, state: FSMContext):
     await message.answer("Давайте начнем регистрацию. Введите ваше имя пользователя:")
     await state.set_state(RegisterStates.waiting_for_username)
 
-# Обработчик ввода имени пользователя
+
 @dp.message(StateFilter(RegisterStates.waiting_for_username))
 async def process_username(message: types.Message, state: FSMContext):
     """
@@ -108,7 +108,7 @@ async def process_username(message: types.Message, state: FSMContext):
     await message.answer("Теперь введите ваш email:")
     await state.set_state(RegisterStates.waiting_for_email)
 
-# Обработчик ввода email
+
 @dp.message(StateFilter(RegisterStates.waiting_for_email))
 async def process_email(message: types.Message, state: FSMContext):
     """
