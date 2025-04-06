@@ -34,6 +34,162 @@ from typing import List, Dict, Tuple, Optional, Any, Union  # Для типиз�
 # Импортируем TextProcessor из utils
 import utils
 
+import os
+import logging
+from typing import Tuple, Optional, Dict, List, Any
+import numpy as np
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Импорты для работы с моделями
+try:
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from langchain.chains import ConversationChain
+    from langchain.memory import ConversationBufferMemory
+except ImportError:
+    logging.error("Необходимые библиотеки не установлены")
+
+# Инициализация логгера
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Загрузка переменных окружения
+load_dotenv()
+
+# Константы
+MODEL_PATH = os.getenv("MODEL_PATH", "./models")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "meta-llama/Llama-2-7b-chat-hf")
+
+# Глобальные переменные для хранения модели и токенизатора
+_model = None
+_tokenizer = None
+_chain = None
+
+def get_model():
+    """
+    Загружает модель и токенизатор.
+    
+    Returns:
+        Tuple[Any, Any]: Модель и токенизатор
+    """
+    global _model, _tokenizer, _chain
+    
+    if _model is not None and _tokenizer is not None:
+        return _model, _tokenizer
+    
+    try:
+        # Проверяем наличие локальной модели
+        model_path = Path(MODEL_PATH)
+        if model_path.exists() and any(model_path.iterdir()):
+            # Используем локальную модель
+            model_path_str = str(model_path)
+            logger.info(f"Загрузка локальной модели из {model_path_str}")
+            
+            _tokenizer = AutoTokenizer.from_pretrained(model_path_str)
+            _model = AutoModelForCausalLM.from_pretrained(
+                model_path_str,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                device_map="auto"
+            )
+        else:
+            # Используем модель из Hugging Face Hub
+            logger.info(f"Загрузка модели из Hugging Face Hub: {DEFAULT_MODEL}")
+            _tokenizer = AutoTokenizer.from_pretrained(DEFAULT_MODEL)
+            _model = AutoModelForCausalLM.from_pretrained(
+                DEFAULT_MODEL,
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                device_map="auto"
+            )
+        
+        # Инициализация цепочки разговора для LangChain
+        memory = ConversationBufferMemory()
+        _chain = ConversationChain(memory=memory)
+        
+        logger.info("Модель успешно загружена")
+        return _model, _tokenizer
+    
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке модели: {e}")
+        # В демо-режиме можно обойтись без модели
+        return None, None
+
+def query_model(query: str) -> Tuple[str, bool]:
+    """
+    Отправляет запрос к модели и получает ответ.
+    
+    Args:
+        query (str): Текст запроса
+    
+    Returns:
+        Tuple[str, bool]: Ответ модели и флаг необходимости оператора
+    """
+    try:
+        model, tokenizer = get_model()
+        
+        if model is None or tokenizer is None:
+            # Демо-режим - возвращаем заглушку
+            return "В данный момент сервис работает в демо-режиме. Ваш запрос: " + query, False
+        
+        # Проверяем запрос на необходимость оператора
+        needs_operator = check_needs_operator(query)
+        
+        # Подготовка запроса
+        prompt = f"Запрос: {query}\nОтвет:"
+        
+        # Генерация ответа
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        
+        with torch.no_grad():
+            outputs = model.generate(
+                inputs.input_ids,
+                max_length=512,
+                temperature=0.7,
+                top_p=0.9,
+                do_sample=True
+            )
+        
+        response = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+        
+        # Извлекаем только ответ из сгенерированного текста
+        if "Ответ:" in response:
+            response = response.split("Ответ:")[1].strip()
+        
+        return response, needs_operator
+    
+    except Exception as e:
+        logger.error(f"Ошибка при запросе к модели: {e}")
+        return "Извините, произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.", True
+
+def check_needs_operator(query: str) -> bool:
+    """
+    Проверяет, требуется ли вмешательство оператора для данного запроса.
+    
+    Args:
+        query (str): Текст запроса
+    
+    Returns:
+        bool: True, если требуется оператор, иначе False
+    """
+    # Ключевые слова, которые могут указывать на необходимость оператора
+    operator_keywords = [
+        "человек", "оператор", "менеджер", "сотрудник", "живой",
+        "не понимаю", "не могу понять", "сложно", "проблема", "ошибка",
+        "помогите", "помощь", "срочно", "консультант", "не работает"
+    ]
+    
+    # Проверяем наличие ключевых слов
+    query_lower = query.lower()
+    for keyword in operator_keywords:
+        if keyword in query_lower:
+            return True
+    
+    # Если запрос слишком длинный или сложный, тоже может потребоваться оператор
+    if len(query.split()) > 30:
+        return True
+    
+    return False
+
 class Model:
     """
     Модель для семантического поиска релевантных статей в базе знаний

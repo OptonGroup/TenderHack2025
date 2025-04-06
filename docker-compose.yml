@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # База данных PostgreSQL
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=tenderhack
+    ports:
+      - "5432:5432"
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  neyro:
+    build: ./Neyro
+    volumes:
+      - ./Neyro:/app
+      - ./models:/app/models
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/tenderhack
+      - MODEL_PATH=/app/models
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+
+  backend:
+    build: ./Backend
+    volumes:
+      - ./Backend:/app
+    environment:
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+      - API_URL=http://neyro:8000
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/tenderhack
+    depends_on:
+      - neyro
+    restart: always
+
+volumes:
+  postgres_data: 
