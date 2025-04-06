@@ -21,6 +21,7 @@ import logging
 import json
 import requests
 import urllib.parse
+import re # Импортируем модуль re для работы с регулярными выражениями
 
 from database import get_db, init_db
 import models
@@ -730,16 +731,53 @@ async def create_chat_message(
             detail=f"Ошибка при создании сообщения: {str(e)}"
         )
 
+# --- Вспомогательная функция для определения темы чата ---
+def extract_chat_topic(messages: List[models.ChatHistory]) -> Optional[str]:
+    """Извлекает тему чата из первого сообщения пользователя."""
+    greetings = ["привет", "здравствуйте", "добрый день", "добрый вечер", "доброе утро", "хелло", "hi", "hello"]
+    for msg in messages:
+        # Ищем первое сообщение НЕ от бота и НЕ от оператора
+        is_operator = False
+        if msg.message_metadata:
+            try:
+                metadata = json.loads(msg.message_metadata) if isinstance(msg.message_metadata, str) else msg.message_metadata
+                if metadata.get('is_operator_message'):
+                    is_operator = True
+            except: pass # Игнорируем ошибки парсинга JSON
+        
+        if not msg.is_bot and not is_operator and msg.message:
+            first_message_text = msg.message.strip().lower()
+            # Проверяем, не является ли сообщение просто приветствием
+            is_greeting_only = False
+            for greet in greetings:
+                if first_message_text == greet or first_message_text.startswith(greet + ",") or first_message_text.startswith(greet + ".") or first_message_text.startswith(greet + "!"):
+                    is_greeting_only = True
+                    break
+            if is_greeting_only:
+                continue # Ищем следующее не приветственное сообщение
+            
+            # Берем первые ~50 символов или до первого переноса строки
+            topic = first_message_text
+            newline_index = topic.find('\n')
+            if newline_index != -1:
+                topic = topic[:newline_index]
+                
+            if len(topic) > 50:
+                topic = topic[:50] + "..."
+                
+            # Делаем первую букву заглавной
+            if topic:
+                 return topic[0].upper() + topic[1:]
+                 
+    return None # Тема не найдена
+
+# --- Эндпоинт для истории чата пользователя --- 
 @app.get("/api/chat-history/{chat_id}", response_model=schemas.ChatConversation)
-async def get_chat_conversation(
-    request: Request,
+def get_chat_history_endpoint(
     chat_id: str,
-    current_user: models.User = Depends(get_api_user),
+    current_user: models.User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Получение истории сообщений для конкретного чата
-    """
     try:
         logger.info(f"Получение истории чата {chat_id} для пользователя {current_user.id}")
         # Проверяем, что пользователь имеет доступ к этому чату
@@ -767,7 +805,22 @@ async def get_chat_conversation(
         }
         
         # Затем создаем Pydantic модель из словаря
-        return schemas.ChatConversation(**chat_data)
+        messages_orm = [models.ChatHistory(**msg) for msg in chat_data["messages"]]
+        topic = extract_chat_topic(messages_orm) # Извлекаем тему
+        
+        # Преобразуем в Pydantic модель - оставляем history, схема ожидает messages
+        messages = [schemas.ChatHistory.from_orm(msg) for msg in messages_orm]
+        
+        logger.info(f"Оператор {current_user.username} просмотрел чат {chat_id} пользователя {topic}. Сообщений: {len(messages)}.")
+        
+        # Возвращаем данные в формате ChatConversation
+        return schemas.ChatConversation(
+            chat_id=chat_id, 
+            messages=messages, 
+            topic=topic, 
+            username=current_user.username, # Добавляем имя текущего пользователя 
+            user_id=current_user.id # Добавляем ID текущего пользователя
+        )
     except Exception as e:
         logger.error(f"Ошибка при получении истории чата: {str(e)}")
         raise HTTPException(
@@ -1627,15 +1680,17 @@ def get_specific_chat_for_operator(
 
         # Преобразуем в Pydantic модель - оставляем history, схема ожидает messages
         messages = [schemas.ChatHistory.from_orm(msg) for msg in history_orm]
+        topic = extract_chat_topic(history_orm) # Извлекаем тему
         
         logger.info(f"Оператор {current_user.username} просмотрел чат {chat_id} пользователя {chat_owner_username}. Сообщений: {len(messages)}.")
         
         # Возвращаем данные в формате ChatConversation
         return schemas.ChatConversation(
-            # user_id=chat_owner_id, # Убираем, так как нет в схеме
-            # username=chat_owner_username, # Убираем, так как нет в схеме
             chat_id=chat_id,
-            messages=messages # Переименовали history в messages
+            messages=messages,
+            topic=topic,
+            username=chat_owner_username, # Имя пользователя, с которым общается оператор
+            user_id=chat_owner_id # ID пользователя, с которым общается оператор
         )
     except HTTPException as http_exc:
         raise http_exc # Пробрасываем HTTP исключения дальше

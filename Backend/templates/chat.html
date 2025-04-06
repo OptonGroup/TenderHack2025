@@ -502,6 +502,7 @@
         const ratingStars = document.querySelectorAll('.rating-star');
         const submitRatingBtn = document.getElementById('submit-rating-btn');
         const operatorHelpBtn = document.getElementById('operatorHelpBtn');
+        const chatTitle = document.getElementById('chat-title');
         
         // Переменные для работы с чатом
         let currentChatId = generateChatId(); // Генерируем ID нового чата при загрузке
@@ -662,9 +663,9 @@
             }
         }
 
-        // Функция экранирования HTML
+        // Функция экранирования HTML и замены \n на <br>
         function escapeHtml(unsafe) {
-            if (unsafe === null || unsafe === undefined) {
+             if (unsafe === null || unsafe === undefined) {
                  return '';
              }
              return unsafe
@@ -673,7 +674,8 @@
                   .replace(/</g, "&lt;")
                   .replace(/>/g, "&gt;")
                   .replace(/"/g, "&quot;")
-                  .replace(/'/g, "&#039;");
+                  .replace(/'/g, "&#039;")
+                  .replace(/\n/g, '<br>'); // Заменяем \n на <br>
          }
 
          // Функция прокрутки вниз
@@ -921,7 +923,7 @@
             // Форматируем время
             const timeString = formatTime(msg.timestamp);
 
-            // Генерируем HTML
+            // Генерируем HTML с использованием escapeHtml для текста сообщения
             messageDiv.innerHTML = `
                 <div class="message-content">
                     <div class="message-sender fw-bold mb-1">${senderName}</div>
@@ -1175,16 +1177,23 @@
                 currentChatId = chatId;
                 
                 // Получаем историю чата
-                const chatHistory = await api.getChatHistory(chatId);
-                console.log('Получена история чата:', chatHistory);
+                const chatData = await api.getChatHistory(chatId);
+                console.log('Получена история чата:', chatData);
                 
                 // Очищаем историю текущего чата
                 chatBody.innerHTML = '';
                 
-                // Отображаем сообщения
-                if (chatHistory && chatHistory.messages && chatHistory.messages.length > 0) {
-                    console.log('Отображаем сообщения из истории:', chatHistory.messages.length);
-                    chatHistory.messages.forEach(msg => {
+                // Обновляем заголовок чата с темой
+                if (chatTitle) {
+                    let titleText = 'Чат';
+                    if (chatData.topic) {
+                        titleText += `: ${escapeHtml(chatData.topic)}`;
+                    }
+                    chatTitle.textContent = titleText;
+                }
+
+                if (chatData && chatData.messages && chatData.messages.length > 0) {
+                    chatData.messages.forEach(msg => {
                         displayMessage(msg);
                     });
                 } else {
@@ -1200,19 +1209,13 @@
                     displayMessage(welcomeMsg);
                 }
                 
-                // Обновляем заголовок чата
-                const truncatedId = chatId.split('_')[0] + '...';
-                document.querySelector('.chat-title').textContent = `Чат ${truncatedId}`;
-                
-                // Обновляем активный чат в списке
-                updateActiveChat();
-                
-                // Прокручиваем чат вниз
-                chatBody.scrollTop = chatBody.scrollHeight;
+                // Обновляем список чатов
+                await updateChatList();
                 
             } catch (error) {
                 console.error('Error loading chat:', error);
                 chatBody.innerHTML = '<div class="alert alert-danger m-3">Ошибка при загрузке чата. Попробуйте создать новый чат.</div>';
+                if (chatTitle) chatTitle.textContent = 'Ошибка загрузки чата'; // Обновляем заголовок при ошибке
                 showToast('Ошибка при загрузке чата: ' + error.message, 'error');
             }
         }
