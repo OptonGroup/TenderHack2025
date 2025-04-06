@@ -67,28 +67,66 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     return encoded_jwt
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
+def get_token_from_cookie(request: Request) -> Optional[str]:
+    """Вспомогательная функция для извлечения токена из cookie"""
+    return request.cookies.get("token")
+
+
+async def get_current_user(
+    request: Request, 
+    db: Session = Depends(get_db)
+) -> models.User:
     """
-    Получает текущего пользователя по токену
+    Получает текущего пользователя по токену из заголовка Authorization (Bearer) ИЛИ из cookie 'token'.
+    Теперь проверяет заголовок и cookie вручную через объект request.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Недействительные учетные данные",
+        detail="Необходима авторизация. Пожалуйста, войдите в систему.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    token: Optional[str] = None
+    source: Optional[str] = None
+
+    # 1. Проверяем заголовок Authorization
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        parts = auth_header.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1]
+            source = "header"
+        else:
+            print(f"Некорректный формат заголовка Authorization: {auth_header}")
+            # Не вызываем ошибку сразу, может быть токен в cookie
+
+    # 2. Если в заголовке нет, проверяем cookie
+    if token is None:
+        token = get_token_from_cookie(request)
+        source = "cookie"
+
+    # 3. Если токен так и не найден
+    if token is None:
+        print("Токен не найден ни в заголовке Authorization, ни в cookie 'token'")
+        raise credentials_exception
+
+    # 4. Декодируем найденный токен
     try:
-        # Используем jose.jwt для декодирования токена
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
+            print(f"Имя пользователя (sub) не найдено в токене (источник: {source})")
             raise credentials_exception
     except JWTError as e:
-        print(f"Ошибка декодирования JWT: {e}")
+        print(f"Ошибка декодирования JWT (источник: {source}): {e}. Токен: {token[:10]}...{token[-10:] if len(token)>20 else ''}")
         raise credentials_exception
     
+    # 5. Ищем пользователя
     user = get_user(db, username=username)
     if user is None:
+        print(f"Пользователь '{username}' из токена (источник: {source}) не найден в базе данных")
         raise credentials_exception
+    
     return user
 
 

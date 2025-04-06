@@ -636,37 +636,94 @@
             }
         }
         
+        // --- Вспомогательные функции ---
+
+        // Функция форматирования времени
+        function formatTime(isoString) {
+            if (!isoString) return '';
+            try {
+                const date = new Date(isoString);
+                // Проверка на валидность даты
+                if (isNaN(date.getTime())) {
+                    // Если дата невалидна, пытаемся распарсить как число (timestamp)
+                    const timestampNum = parseInt(isoString, 10);
+                    if (!isNaN(timestampNum)) {
+                        const dateFromTimestamp = new Date(timestampNum);
+                        if (!isNaN(dateFromTimestamp.getTime())) {
+                            return dateFromTimestamp.toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                        }
+                    }
+                    return 'Некорректное время'; // Возвращаем заглушку, если дата невалидна
+                }
+                return date.toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            } catch (e) {
+                console.error("Error formatting time:", isoString, e);
+                return 'Ошибка времени';
+            }
+        }
+
+        // Функция экранирования HTML
+        function escapeHtml(unsafe) {
+            if (unsafe === null || unsafe === undefined) {
+                 return '';
+             }
+             return unsafe
+                  .toString()
+                  .replace(/&/g, "&amp;")
+                  .replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;")
+                  .replace(/"/g, "&quot;")
+                  .replace(/'/g, "&#039;");
+         }
+
+         // Функция прокрутки вниз
+         function scrollToBottom() {
+             chatBody.scrollTop = chatBody.scrollHeight;
+         }
+
+        // --- Основные функции чата ---
+
         // Отправка сообщения
         async function sendMessage() {
-            const message = chatInputTextarea.value.trim();
-            if (!message) return;
+            const messageText = chatInputTextarea.value.trim();
+            if (!messageText) return;
             
             // Очищаем поле ввода
             chatInputTextarea.value = '';
             chatInputTextarea.style.height = 'auto';
             
             try {
-                // Добавляем сообщение пользователя в интерфейс
-                addMessage(message, false);
-                
-                // Показываем индикатор набора
+                // Отображаем сообщение пользователя
+                const userMsgData = {
+                    message: messageText,
+                    is_bot: false,
+                    timestamp: new Date().toISOString(),
+                    user_id: api.user?.id, // Добавляем ID текущего пользователя
+                    message_metadata: null
+                };
+                displayMessage(userMsgData);
                 showTypingIndicator();
                 
                 // Сохраняем сообщение пользователя на сервере
                 console.log('Отправка сообщения пользователя на сервер, chatId:', currentChatId);
-                const userMessageData = await api.sendChatMessage(currentChatId, message);
+                const userMessageData = await api.sendChatMessage(currentChatId, messageText);
                 console.log('Сообщение пользователя сохранено:', userMessageData);
                 
                 // Получаем ответ от AI
-                const aiResponse = await requestAIResponse(message); // Теперь возвращает { answer: "...", needs_operator: true/false }
+                const aiResponse = await requestAIResponse(messageText);
                 
                 // Скрываем индикатор набора
                 hideTypingIndicator();
                 
-                // Добавляем ответ бота в интерфейс
-                // Генерируем временный ID для кнопок лайк/дизлайк до сохранения на сервере
-                const tempBotMessageId = 'temp_' + Date.now(); 
-                addMessage(aiResponse.answer, true, tempBotMessageId);
+                // Отображаем ответ AI
+                const aiMsgData = {
+                    message: aiResponse.answer,
+                    is_bot: true,
+                    timestamp: new Date().toISOString(),
+                    user_id: null,
+                    message_metadata: aiResponse.metadata || {}
+                };
+                displayMessage(aiMsgData);
                 
                 // Сохраняем ответ бота на сервере
                 console.log('Отправка ответа бота на сервер');
@@ -674,16 +731,10 @@
                 const botMessageData = await api.sendChatMessage(currentChatId, aiResponse.answer, true);
                 console.log('Ответ бота сохранен:', botMessageData);
 
-                // Обновляем data-message-id у кнопок лайк/дизлайк, если сообщение было успешно сохранено
-                if (botMessageData && botMessageData.id) {
-                     const feedbackBtns = chatBody.querySelectorAll(`[data-message-id="${tempBotMessageId}"]`);
-                     feedbackBtns.forEach(btn => btn.setAttribute('data-message-id', botMessageData.id));
-                }
-
                 // Проверяем флаг needs_operator ИЛИ ключевые фразы
-                if (aiResponse.needs_operator || checkForOperatorRequest(message)) {
-                     console.log('AI определил необходимость оператора или найдена ключевая фраза.');
-                     showOperatorButton(); // Показываем кнопку вызова оператора
+                if (aiResponse.needs_operator || checkForOperatorRequest(messageText)) {
+                    console.log('AI определил необходимость оператора или найдена ключевая фраза.');
+                    showOperatorButton(); // Показываем кнопку вызова оператора
                 }
                 
                 // Обновляем список чатов
@@ -797,132 +848,103 @@
             }
         }
         
-        // Добавление сообщения в чат
-        function addMessage(content, isBot, messageId = null) {
-            const message = document.createElement('div');
-            message.className = `message message-${isBot ? 'bot' : 'user'}`;
-            
-            const messageContent = document.createElement('div');
-            messageContent.className = 'message-content';
-            
-            // Форматируем ответ бота
-            if (isBot) {
-                messageContent.innerHTML = formatAIResponse(content);
-            } else {
-                // Для сообщений пользователя просто выводим текст
-                const p = document.createElement('p');
-                p.className = 'mb-0';
-                p.textContent = content;
-                messageContent.appendChild(p);
-            }
-            
-            const messageMeta = document.createElement('div');
-            messageMeta.className = 'message-meta';
-            
-            const messageTime = document.createElement('div');
-            messageTime.className = 'message-time';
-            messageTime.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
-            messageMeta.appendChild(messageTime);
-            
-            // Добавляем кнопки обратной связи только для сообщений бота
-            if (isBot) {
-                const messageFeedback = document.createElement('div');
-                messageFeedback.className = 'message-feedback';
-                
-                const likeBtn = document.createElement('button');
-                likeBtn.className = 'message-feedback-btn like';
-                likeBtn.innerHTML = '<i class="bi bi-hand-thumbs-up"></i>';
-                likeBtn.setAttribute('data-message-id', messageId || 'temp_' + Date.now());
-                
-                const dislikeBtn = document.createElement('button');
-                dislikeBtn.className = 'message-feedback-btn dislike';
-                dislikeBtn.innerHTML = '<i class="bi bi-hand-thumbs-down"></i>';
-                dislikeBtn.setAttribute('data-message-id', messageId || 'temp_' + Date.now());
-                
-                // Обработчики кнопок обратной связи
+        // Добавление обработчиков для кнопок лайк/дизлайк
+        function addFeedbackHandlers(messageElement) {
+            const likeBtn = messageElement.querySelector('.message-feedback-btn.like');
+            const dislikeBtn = messageElement.querySelector('.message-feedback-btn.dislike');
+
+            if (likeBtn && dislikeBtn) {
                 likeBtn.addEventListener('click', function() {
-                    provideFeedback(this.getAttribute('data-message-id'), 'like', this, dislikeBtn);
+                    const messageId = this.getAttribute('data-message-id');
+                    provideFeedback(messageId, 'like', this, dislikeBtn);
                 });
-                
+
                 dislikeBtn.addEventListener('click', function() {
-                    provideFeedback(this.getAttribute('data-message-id'), 'dislike', this, likeBtn);
+                    const messageId = this.getAttribute('data-message-id');
+                    provideFeedback(messageId, 'dislike', this, likeBtn);
                 });
-                
-                messageFeedback.appendChild(likeBtn);
-                messageFeedback.appendChild(dislikeBtn);
-                messageMeta.appendChild(messageFeedback);
             }
-            
-            message.appendChild(messageContent);
-            message.appendChild(messageMeta);
-            
-            chatBody.appendChild(message);
-            
-            // Прокручиваем чат вниз
-            chatBody.scrollTop = chatBody.scrollHeight;
         }
-        
-        // Функция для форматирования ответа AI
-        function formatAIResponse(rawResponse) {
-            let htmlContent = '';
-            const parts = rawResponse.split('\\n\\n'); // Разделяем по двойному переносу строки
 
-            parts.forEach(part => {
-                part = part.trim().replace(/\\n/g, '<br>'); // Заменяем одинарные переносы на <br>
+        // Функция отображения сообщения в чате
+        function displayMessage(msg) { 
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+
+            let senderClass = 'message-bot'; // По умолчанию серый (бот или оператор)
+            let senderName = 'AI Ассистент';
+            let isCurrentUserMsg = false; // Сообщение от текущего пользователя?
+            let isOperator = false;
+
+            // Парсим метаданные
+            let parsedMetadata = {};
+            if (typeof msg.message_metadata === 'string') {
+                try { parsedMetadata = JSON.parse(msg.message_metadata); } catch (e) { console.error("Error parsing metadata:", msg.message_metadata, e); }
+            } else if (typeof msg.message_metadata === 'object' && msg.message_metadata !== null) {
+                parsedMetadata = msg.message_metadata;
+            }
+
+            // Определяем отправителя и стиль
+            if (parsedMetadata.is_operator_message) {
+                isOperator = true;
+                senderName = `Оператор (${parsedMetadata.operator_username || 'Поддержка'})`;
+                senderClass = 'message-bot'; // Серый стиль для оператора
+            } else if (msg.is_bot) {
+                senderName = 'AI Ассистент';
+                senderClass = 'message-bot'; // Серый стиль для бота
+            } else {
+                // Сообщение от пользователя (не бот, не оператор)
+                const currentUserId = api.user?.id;
                 
-                if (part.startsWith('Инструкция по вашему запросу:')) {
-                    htmlContent += `<p><strong>${part.substring(0, 29)}</strong>${part.substring(29)}</p>`;
-                } else if (part.startsWith('Источник:')) {
-                    const sourceText = part.substring(9).trim();
-                    // Создаем ссылку на страницу поиска в базе знаний
-                    const searchUrl = `/knowledge?search=${encodeURIComponent(sourceText)}`;
-                    htmlContent += `<p><strong>Источник:</strong> <a href="${searchUrl}" target="_blank">${sourceText}</a></p>`;
-                } else if (part.startsWith('Дополнительная информация:')) {
-                    // Начинаем список для дополнительной информации
-                    htmlContent += `<p><strong>Дополнительная информация:</strong></p><ul>`;
-                } else if (htmlContent.includes('<ul>')) {
-                    // Если мы внутри списка, добавляем как элемент списка
-                    // Проверяем, не является ли это следующим источником
-                    if (part.startsWith('Источник:')) {
-                        // Закрываем предыдущий li и добавляем источник
-                        const sourceText = part.substring(9).trim();
-                        const searchUrl = `/knowledge?search=${encodeURIComponent(sourceText)}`;
-                         htmlContent += `</li><li><strong>Источник:</strong> <a href="${searchUrl}" target="_blank">${sourceText}</a>`;
-                    } else if (part.trim()) {
-                         // Начинаем новый li для информации
-                         htmlContent += `<li>${part}`; 
-                    }
-                } else if (part.trim()) {
-                    // Если это не специальная часть, просто добавляем как параграф
-                    htmlContent += `<p>${part}</p>`;
-                }
-            });
-            
-            // Закрываем ul, если он был открыт
-            if (htmlContent.includes('<ul>') && !htmlContent.endsWith('</ul>')) {
-                 if (htmlContent.endsWith('</li>')) { // Если последний элемент был li, просто закрываем ul
-                    htmlContent += '</ul>';
-                 } else { // Иначе закрываем последний li и ul
-                     htmlContent += '</li></ul>';
-                 }
-            }
+                // --- DEBUGGING --- 
+                console.log(`displayMessage: Comparing msg.user_id (${msg.user_id}, type: ${typeof msg.user_id}) with currentUserId (${currentUserId}, type: ${typeof currentUserId})`);
+                // --- END DEBUGGING --- 
 
-            // Заменяем маркеры типа "1) ", "2) " на элементы нумерованного списка <ol>
-             htmlContent = htmlContent.replace(/<p>(\d+)\) (.*?)<\/p>/g, (match, number, text) => {
-                if (number === '1') {
-                    return `<ol><li>${text}</li>`;
+                // Проверяем, текущий ли это пользователь
+                // Добавим сравнение с учетом возможного несовпадения типов (число vs строка)
+                if (msg.user_id != null && currentUserId != null && String(msg.user_id) === String(currentUserId)) {
+                    isCurrentUserMsg = true;
+                    senderName = 'Вы';
+                    senderClass = 'message-user'; // Красный стиль для текущего пользователя
                 } else {
-                    return `<li>${text}</li>`;
+                    // Системное сообщение или от другого пользователя 
+                    senderName = 'Система'; // Или 'Пользователь ID ' + msg.user_id
+                    senderClass = 'message-bot'; // Серый стиль по умолчанию
+                     // --- DEBUGGING --- 
+                     console.warn('Message classified as System:', msg);
+                     // --- END DEBUGGING --- 
                 }
-            });
-            // Закрываем <ol>, если он был открыт
-            if (htmlContent.includes('<ol><li>') && !htmlContent.includes('</ol>')) {
-                 htmlContent = htmlContent.replace(/(<\/li>)(?!.*<\/li>)/, '$1</ol>');
             }
 
+            messageDiv.classList.add(senderClass);
 
-            return htmlContent;
+            // Форматируем время
+            const timeString = formatTime(msg.timestamp);
+
+            // Генерируем HTML
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="message-sender fw-bold mb-1">${senderName}</div>
+                    <div class="message-text">${escapeHtml(msg.message)}</div>
+                </div>
+                <div class="message-meta">
+                    <span class="message-time">${timeString}</span>
+                    ${ !isCurrentUserMsg && !isOperator && msg.is_bot ? `
+                    <div class="message-feedback">
+                        <button class="message-feedback-btn like" title="Понравилось" data-message-id="${msg.id || 'temp_' + Date.now()}"><i class="bi bi-hand-thumbs-up"></i></button>
+                        <button class="message-feedback-btn dislike" title="Не понравилось" data-message-id="${msg.id || 'temp_' + Date.now()}"><i class="bi bi-hand-thumbs-down"></i></button>
+                    </div>
+                    ` : '' }
+                </div>
+            `;
+
+            chatBody.appendChild(messageDiv);
+            scrollToBottom();
+
+            // Добавляем обработчики лайков/дизлайков только для сообщений AI бота
+            if (!isCurrentUserMsg && !isOperator && msg.is_bot) {
+                addFeedbackHandlers(messageDiv);
+            }
         }
         
         // Показать индикатор набора
@@ -995,7 +1017,7 @@
             chatBody.innerHTML = '';
             
             // Добавляем приветственное сообщение
-            addMessage('Привет! Я AI-ассистент TenderHack. Чем я могу вам помочь сегодня?', true);
+            displayMessage('Привет! Я AI-ассистент TenderHack. Чем я могу вам помочь сегодня?', true, new Date());
             
             // Обновляем заголовок чата
             document.querySelector('.chat-title').textContent = 'Новый чат';
@@ -1163,12 +1185,19 @@
                 if (chatHistory && chatHistory.messages && chatHistory.messages.length > 0) {
                     console.log('Отображаем сообщения из истории:', chatHistory.messages.length);
                     chatHistory.messages.forEach(msg => {
-                        addMessage(msg.message, msg.is_bot, msg.id);
+                        displayMessage(msg);
                     });
                 } else {
                     console.log('История чата пуста, добавляем приветствие');
                     // Если чат пустой, добавляем приветственное сообщение
-                    addMessage('Привет! Я AI-ассистент TenderHack. Чем я могу вам помочь сегодня?', true);
+                    const welcomeMsg = {
+                        message: 'Привет! Я AI-ассистент TenderHack. Чем я могу вам помочь сегодня?',
+                        is_bot: true,
+                        timestamp: new Date().toISOString(),
+                        user_id: null,
+                        message_metadata: null
+                    };
+                    displayMessage(welcomeMsg);
                 }
                 
                 // Обновляем заголовок чата
@@ -1355,7 +1384,7 @@
         }
         
         // Модифицируем функцию загрузки истории чата для отображения сообщений оператора
-        async function loadChatHistory(chatId = currentChatId) {
+        async function loadChatHistory(chatIdToLoad) {
             // ... existing code ...
             
             // Добавляем проверку на сообщения от оператора
@@ -1375,10 +1404,10 @@
                         addOperatorMessage(message.message, message.id);
                     } else if (message.is_bot) {
                         // Если это сообщение от бота
-                        addMessage(message.message, true, message.id);
+                        displayMessage(message);
                     } else {
                         // Если это сообщение от пользователя
-                        addMessage(message.message, false, message.id);
+                        displayMessage(message);
                     }
                 } catch (e) {
                     console.error('Ошибка при добавлении сообщения:', e);

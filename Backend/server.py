@@ -1573,6 +1573,176 @@ async def resolve_support_request(
             content={"detail": f"Ошибка при разрешении заявки: {str(e)}"}
         )
 
+@app.get("/api/operator/chats", response_model=List[str], tags=["Operator"])
+async def get_all_chats_for_operator(
+    current_user: models.User = Depends(get_operator_user), # Проверяем роль оператора/админа
+    db: Session = Depends(get_db)
+):
+    """
+    Получение списка ВСЕХ уникальных chat_id для оператора/администратора.
+    """
+    try:
+        # Используем select и distinct для получения уникальных chat_id со всей таблицы
+        stmt = select(models.ChatHistory.chat_id).distinct()
+        result = await db.execute(stmt)
+        all_chat_ids = [row[0] for row in result.fetchall()]
+        logger.info(f"Оператор {current_user.username} запросил список всех чатов. Найдено: {len(all_chat_ids)}.")
+        return all_chat_ids
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка всех чатов для оператора {current_user.username}: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка сервера при получении списка всех чатов")
+
+@app.get("/api/operator/chats/{chat_id}", response_model=schemas.ChatConversation, tags=["Operator"])
+def get_specific_chat_for_operator(
+    chat_id: str,
+    current_user: models.User = Depends(get_operator_user), # Проверяем роль оператора/админа
+    db: Session = Depends(get_db)
+):
+    """
+    Получение полной истории сообщений для указанного chat_id оператором/администратором.
+    """
+    try:
+        # Получаем историю чата без проверки user_id, убираем await
+        stmt = select(models.ChatHistory).where(models.ChatHistory.chat_id == chat_id).order_by(models.ChatHistory.timestamp)
+        result = db.execute(stmt) # Убираем await
+        history_orm = result.scalars().all()
+
+        if not history_orm:
+            logger.warning(f"Оператор {current_user.username} запросил несуществующий чат: {chat_id}")
+            raise HTTPException(status_code=404, detail="Чат не найден")
+        
+        # Получаем информацию о пользователе, которому принадлежит чат
+        # Ищем первое сообщение с user_id, чтобы определить владельца
+        chat_owner_id = None
+        for msg in history_orm:
+            if msg.user_id is not None:
+                chat_owner_id = msg.user_id
+                break 
+        
+        chat_owner_username = "Неизвестный пользователь"
+        if chat_owner_id:
+             chat_owner = db.get(models.User, chat_owner_id) # Убираем await
+             if chat_owner:
+                 chat_owner_username = chat_owner.username
+
+        # Преобразуем в Pydantic модель - оставляем history, схема ожидает messages
+        messages = [schemas.ChatHistory.from_orm(msg) for msg in history_orm]
+        
+        logger.info(f"Оператор {current_user.username} просмотрел чат {chat_id} пользователя {chat_owner_username}. Сообщений: {len(messages)}.")
+        
+        # Возвращаем данные в формате ChatConversation
+        return schemas.ChatConversation(
+            # user_id=chat_owner_id, # Убираем, так как нет в схеме
+            # username=chat_owner_username, # Убираем, так как нет в схеме
+            chat_id=chat_id,
+            messages=messages # Переименовали history в messages
+        )
+    except HTTPException as http_exc:
+        raise http_exc # Пробрасываем HTTP исключения дальше
+    except Exception as e:
+        # Добавляем traceback для лучшей диагностики
+        import traceback
+        logger.error(f"Ошибка при получении чата {chat_id} для оператора {current_user.username}: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Ошибка сервера при получении истории чата")
+
+@app.post("/api/operator/chats/{chat_id}/message", response_model=schemas.ChatHistory, tags=["Operator"])
+async def post_message_by_operator(
+    chat_id: str,
+    message_data: schemas.OperatorMessageCreate,
+    current_operator: models.User = Depends(get_operator_user), # Гарантирует, что это оператор или админ
+    db: Session = Depends(get_db)
+):
+    """
+    Отправка сообщения оператором в указанный чат.
+    Сообщение сохраняется в базе данных, но user_id будет None, 
+    а в метаданных будет указан ID оператора.
+    """
+    try:
+        # Находим пользователя, которому принадлежит чат, чтобы убедиться, что чат существует
+        # Это также поможет правильно отобразить сообщение у пользователя
+        original_message = db.query(models.ChatHistory).filter(
+            models.ChatHistory.chat_id == chat_id,
+            models.ChatHistory.user_id.isnot(None) # Находим любое сообщение от пользователя в этом чате
+        ).first()
+        
+        if not original_message:
+            logger.error(f"Оператор {current_operator.username} попытался отправить сообщение в несуществующий чат {chat_id}")
+            raise HTTPException(status_code=404, detail="Чат не найден или в нем нет сообщений от пользователя")
+            
+        # Определяем user_id, к которому относится чат
+        target_user_id = original_message.user_id
+
+        # Создаем метаданные для сообщения оператора
+        metadata = {
+            "is_operator_message": True,
+            "operator_id": current_operator.id,
+            "operator_username": current_operator.username
+        }
+
+        # Создаем новое сообщение в истории чата
+        new_message = models.ChatHistory(
+            chat_id=chat_id,
+            user_id=target_user_id,  # Привязываем к пользователю чата
+            message=message_data.message,
+            is_bot=False, # Сообщение не от бота, а от человека-оператора
+            message_metadata=json.dumps(metadata) # Сохраняем метаданные как JSON
+        )
+        
+        db.add(new_message)
+        db.commit()
+        db.refresh(new_message)
+        
+        logger.info(f"Оператор {current_operator.username} отправил сообщение в чат {chat_id} пользователя {target_user_id}. ID сообщения: {new_message.id}")
+        
+        return new_message
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Ошибка при отправке сообщения оператором {current_operator.username} в чат {chat_id}: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка сервера при отправке сообщения оператором")
+
+@app.get("/operator-chat/{chat_id}", response_class=HTMLResponse, tags=["Operator"])
+async def operator_chat_page(
+    request: Request, 
+    chat_id: str, 
+    current_user: models.User = Depends(get_operator_user), # Ensure operator/admin access
+    db: Session = Depends(get_db)
+):
+    """
+    Страница чата для оператора для общения с конкретным пользователем.
+    """
+    # Проверяем, существует ли чат (хотя бы одно сообщение от пользователя)
+    chat_exists = db.query(models.ChatHistory).filter(
+        models.ChatHistory.chat_id == chat_id,
+        models.ChatHistory.user_id.isnot(None) 
+    ).first()
+    
+    if not chat_exists:
+        # Можно вернуть 404 страницу или редирект с сообщением
+        # Пока просто вернем 404 ошибку FastAPI
+        raise HTTPException(status_code=404, detail="Чат не найден или не содержит сообщений пользователя")
+
+    # Получаем имя пользователя, которому принадлежит чат
+    user_id = chat_exists.user_id
+    chat_user = db.query(models.User).filter(models.User.id == user_id).first()
+    chat_username = chat_user.username if chat_user else "Unknown User"
+
+    return templates.TemplateResponse(
+        "operator_chat.html", 
+        {
+            "request": request, 
+            "user": current_user, # Текущий оператор/админ
+            "chat_id": chat_id,
+            "chat_username": chat_username # Имя пользователя, с которым общается оператор
+        }
+    )
+
+# Добавляем новый тег для документации Swagger/OpenAPI
+tags_metadata = app.openapi().get("tags", [])
+tags_metadata.append({"name": "Operator", "description": "Операции, доступные для операторов и администраторов"})
+app.openapi_tags = tags_metadata
+
 if __name__ == '__main__':
     uvicorn.run(
         app="server:app",

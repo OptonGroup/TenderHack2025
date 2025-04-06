@@ -1,7 +1,8 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 import uuid
+import json
 
 
 class Token(BaseModel):
@@ -206,11 +207,24 @@ class Document(DocumentBase):
 # Схемы для ChatHistory
 class ChatHistoryBase(BaseModel):
     """Базовые данные истории чата"""
-    user_id: int
+    user_id: Optional[int] = None
     chat_id: str
     message: str
     is_bot: bool = False
     message_metadata: Optional[Dict[str, Any]] = None
+
+    # Валидатор для message_metadata, чтобы обрабатывать JSON-строки из БД
+    @field_validator('message_metadata', mode='before')
+    @classmethod
+    def parse_metadata_from_string(cls, value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                # Если невалидный JSON, вернуть None или пустой словарь, или вызвать ошибку
+                # print(f"Warning: Could not parse message_metadata JSON string: {value}")
+                return None # Возвращаем None, если парсинг не удался
+        return value # Если это уже словарь или None, возвращаем как есть
 
 
 class ChatHistoryCreate(ChatHistoryBase):
@@ -234,6 +248,11 @@ class ChatHistoryUpdate(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+class OperatorMessageCreate(BaseModel):
+    """Данные для создания сообщения оператором"""
+    message: str
 
 
 class ChatConversation(BaseModel):

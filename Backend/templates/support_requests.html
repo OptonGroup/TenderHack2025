@@ -226,7 +226,8 @@
             button.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const chatId = button.getAttribute('data-chat-id');
-                window.location.href = `/chat?chat_id=${chatId}`;
+                // Перенаправляем на страницу чата оператора
+                window.location.href = `/operator-chat/${chatId}`;
             });
         });
         
@@ -242,7 +243,8 @@
         document.querySelectorAll('.request-card').forEach(card => {
             card.addEventListener('click', (e) => {
                 const chatId = card.querySelector('.handle-request').getAttribute('data-chat-id');
-                window.location.href = `/chat?chat_id=${chatId}`;
+                 // Перенаправляем на страницу чата оператора
+                window.location.href = `/operator-chat/${chatId}`;
             });
         });
         

@@ -1,0 +1,299 @@
+{% extends "layout.html" %}
+
+{% block title %}Чат с пользователем {{ chat_username }} - Operator{% endblock %}
+
+{% block extra_css %}
+{# Убираем ссылку на Bootstrap CSS, так как она есть в layout.html #}
+{# <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"> #}
+{# Убираем ссылку на основной styles.css, так как она есть в layout.html #}
+{# <link rel="stylesheet" href="/static/css/styles.css"> #}
+<style>
+    /* Стили специфичные для этой страницы */
+    .chat-container {
+        max-width: 900px;
+        margin: 20px auto;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        height: calc(80vh - 50px); /* Скорректированная высота под layout */
+        background-color: #fff;
+    }
+    .chat-header {
+        background-color: #f8f9fa;
+        padding: 10px 15px;
+        border-bottom: 1px solid #ccc;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .chat-messages {
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 15px;
+    }
+    .message {
+        margin-bottom: 15px;
+        padding: 10px 15px;
+        border-radius: 15px;
+        max-width: 75%; /* Немного увеличим */
+        word-wrap: break-word;
+        line-height: 1.4;
+        position: relative; /* Для позиционирования времени */
+    }
+    .user-message {
+        background-color: #e1f5fe;
+        margin-left: auto;
+        border-bottom-right-radius: 0;
+    }
+    .bot-message {
+        background-color: #f1f1f1;
+        margin-right: auto;
+        border-bottom-left-radius: 0;
+    }
+    .operator-message {
+        background-color: #d1e7dd;
+        margin-right: auto;
+        border-bottom-left-radius: 0;
+    }
+    .message-sender {
+        font-size: 0.8em;
+        color: #555;
+        margin-bottom: 4px; /* Увеличим отступ */
+        font-weight: bold;
+    }
+     .message-content {
+         margin-bottom: 5px; /* Отступ между текстом и временем */
+     }
+    .message-timestamp {
+        font-size: 0.7em;
+        color: #888;
+        text-align: right;
+        display: block;
+    }
+    .chat-input {
+        display: flex;
+        padding: 15px; /* Увеличим отступы */
+        border-top: 1px solid #ccc;
+        background-color: #f8f9fa;
+    }
+    .chat-input input {
+        flex-grow: 1;
+        margin-right: 10px;
+    }
+    #resolve-btn {
+        margin-left: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="chat-container">
+        <div class="chat-header">
+            <h5>Чат с пользователем: <strong>{{ chat_username }}</strong> (ID: {{ chat_id }})</h5>
+            <button id="resolve-btn" class="btn btn-success btn-sm">Отметить как решенный</button>
+        </div>
+        <div class="chat-messages" id="chat-messages">
+            <!-- Messages will be loaded here -->
+            <div class="text-center text-muted p-5">Загрузка сообщений...</div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="message-input" class="form-control" placeholder="Введите ваше сообщение...">
+            <button id="send-button" class="btn btn-primary">Отправить</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // JavaScript остается здесь, так как он специфичен для этой страницы
+    const chatId = "{{ chat_id }}";
+    const chatMessagesDiv = document.getElementById('chat-messages');
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-button');
+    const resolveButton = document.getElementById('resolve-btn');
+    const operatorUsername = "{{ user.username }}";
+
+    function formatTimestamp(isoString) {
+        if (!isoString) return '';
+        const date = new Date(isoString);
+        return date.toLocaleString('ru-RU', {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+    }
+
+    function displayMessage(msg) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message');
+
+        let senderName = 'Пользователь';
+        let messageClass = 'user-message';
+        let metadata = {};
+
+        // Парсим метаданные, если они есть и являются строкой
+        if (typeof msg.message_metadata === 'string') {
+            try {
+                metadata = JSON.parse(msg.message_metadata);
+            } catch (e) { console.error("Error parsing metadata:", e); }
+        } else if (typeof msg.message_metadata === 'object' && msg.message_metadata !== null) {
+            metadata = msg.message_metadata; // Уже объект
+        }
+
+        if (msg.is_bot) {
+            senderName = 'AI Ассистент';
+            messageClass = 'bot-message';
+        } else if (metadata.is_operator_message) {
+            // Используем имя из метаданных или имя текущего оператора
+            senderName = `Оператор (${metadata.operator_username || operatorUsername})`;
+            messageClass = 'operator-message';
+        } // Иначе остается 'Пользователь' и 'user-message'
+
+        messageDiv.classList.add(messageClass);
+
+        messageDiv.innerHTML = `
+            <div class="message-sender">${senderName}</div>
+            <div class="message-content">${msg.message}</div>
+            <div class="message-timestamp">${formatTimestamp(msg.timestamp)}</div>
+        `;
+        chatMessagesDiv.appendChild(messageDiv);
+    }
+
+    function scrollToBottom() {
+        chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+    }
+
+    async function loadChatHistory() {
+        chatMessagesDiv.innerHTML = '<div class="text-center text-muted p-5">Загрузка сообщений...</div>';
+        try {
+            const token = localStorage.getItem('authToken');
+            if (!token) throw new Error('Токен аутентификации не найден в localStorage.');
+
+            const response = await fetch(`/api/operator/chats/${chatId}`, {
+                 headers: {
+                     'Authorization': `Bearer ${token}`
+                 }
+            });
+             if (!response.ok) {
+                 let errorDetail = `HTTP error! status: ${response.status}`;
+                 try {
+                     const errorData = await response.json();
+                     errorDetail = errorData.detail || errorDetail;
+                 } catch(e) { /* Ignore parsing error */ }
+                 throw new Error(errorDetail);
+             }
+            const conversation = await response.json();
+            chatMessagesDiv.innerHTML = ''; // Очищаем "Загрузка..."
+            
+            // Используем conversation.messages вместо conversation.history
+            if (conversation.messages && conversation.messages.length > 0) {
+                conversation.messages.forEach(displayMessage); // Передаем каждый объект сообщения
+            } else {
+                chatMessagesDiv.innerHTML = '<div class="text-center text-muted p-5">Сообщений пока нет.</div>';
+            }
+            scrollToBottom();
+        } catch (error) {
+            console.error('Ошибка загрузки истории чата:', error);
+            chatMessagesDiv.innerHTML = `<div class="alert alert-danger">Не удалось загрузить историю чата: ${error.message}</div>`;
+        }
+    }
+
+    async function sendMessage() {
+        const messageText = messageInput.value.trim();
+        if (!messageText) return;
+
+        sendButton.disabled = true;
+        messageInput.disabled = true;
+
+        try {
+            // Используем правильный ключ 'authToken'
+            const token = localStorage.getItem('authToken');
+            if (!token) throw new Error('Токен аутентификации не найден в localStorage.');
+
+            const response = await fetch(`/api/operator/chats/${chatId}/message`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` // Используем токен
+                },
+                body: JSON.stringify({ message: messageText })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`HTTP error! status: ${response.status}, detail: ${errorData.detail || 'Unknown error'}`);
+            }
+
+            const newMessage = await response.json();
+            displayMessage(newMessage);
+            messageInput.value = '';
+            scrollToBottom();
+        } catch (error) {
+            console.error('Ошибка отправки сообщения:', error);
+            alert(`Не удалось отправить сообщение: ${error.message}`);
+        } finally {
+            sendButton.disabled = false;
+            messageInput.disabled = false;
+            messageInput.focus();
+        }
+    }
+
+    async function resolveRequest() {
+        if (!confirm("Вы уверены, что хотите отметить этот запрос как решенный?")) {
+            return;
+        }
+        resolveButton.disabled = true;
+        try {
+            // Используем правильный ключ 'authToken'
+            const token = localStorage.getItem('authToken');
+            if (!token) throw new Error('Токен аутентификации не найден в localStorage.');
+
+            const response = await fetch(`/api/support-requests/${chatId}/resolve`, {
+                method: 'POST',
+                headers: {
+                     'Authorization': `Bearer ${token}`, // Используем токен
+                    'Content-Type': 'application/json'
+                },
+                 body: JSON.stringify({})
+            });
+
+             const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.detail || `HTTP error! status: ${response.status}`);
+            }
+
+            alert(result.message || 'Запрос успешно отмечен как решенный!');
+            resolveButton.innerText = 'Решено';
+        } catch (error) {
+            console.error('Ошибка разрешения запроса:', error);
+            alert(`Не удалось разрешить запрос: ${error.message}`);
+            resolveButton.disabled = false;
+        }
+    }
+
+    // --- Event Listeners ---
+    sendButton.addEventListener('click', sendMessage);
+    messageInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    });
+    resolveButton.addEventListener('click', resolveRequest);
+
+    // --- Initial load ---
+    // Проверяем наличие токена перед загрузкой, используя правильный ключ
+    if (!localStorage.getItem('authToken')) {
+         chatMessagesDiv.innerHTML = '<div class="alert alert-danger">Ошибка: Токен аутентификации не найден. Пожалуйста, войдите снова.</div>';
+    } else {
+         loadChatHistory();
+    }
+
+</script>
+{# Убираем ссылку на Bootstrap JS, так как она есть в layout.html #}
+{# <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script> #}
+{% endblock %}
