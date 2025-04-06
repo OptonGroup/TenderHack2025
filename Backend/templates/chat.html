@@ -1381,7 +1381,8 @@
                     const result = await fetch(`/api/support-requests/${currentChatId}/resolve`, {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
                         }
                     });
                     
