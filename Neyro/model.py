@@ -1042,156 +1042,224 @@ class Model:
     
     def generate_answer(self, text: str, top_n: int = 5, top_k_fragments: int = 7) -> Dict[str, Any]:
         """
-        Генерация ответа на запрос пользователя, включая объяснение логики.
-        
-        text (str): Текст запроса
-        top_n (int): Количество статей для анализа
-        top_k_fragments (int): Количество фрагментов для извлечения
-        
-        Returns:
-            Dict[str, Any]: Словарь с ответом, фрагментами, источниками и объяснением.
-        """
-        # --- Принудительное отключение генерации объяснения LLM --- <--- ДОБАВЛЕНО
-        self.use_llm = False                                      # <--- ДОБАВЛЕНО
-        # --------------------------------------------------------- 
-        
-        print(f"\n--- [DEBUG generate_answer] Начало обработки запроса: '{text[:50]}...'") # Отладка
-        start_time = time.time()
-        reasoning_explanation = "Объяснение не было сгенерировано (LLM отключена или произошла ошибка)." # По умолчанию
+        Генерация ответа на запрос пользователя с использованием гибридного подхода
 
-        print("--- [DEBUG generate_answer] Классификация запроса...") # Отладка
-        # Классификация запроса
-        query_classification = self.text_processor.classify_query(text)
-        print(f"--- [DEBUG generate_answer] Результат классификации: {query_classification}") # Отладка
+        Args:
+            text (str): Текст запроса пользователя
+            top_n (int): Количество релевантных документов для поиска
+            top_k_fragments (int): Количество фрагментов для анализа
+
+        Returns:
+            Dict[str, Any]: Словарь с ответом, фрагментами, источниками и объяснением
+        """
+        start_time = time.time()
         
-        # Проверяем, нужно ли перенаправить пользователя к оператору (логика оставлена)
-        # ... (код проверки needs_operator) ...
-        
-        print("--- [DEBUG generate_answer] Извлечение релевантных фрагментов...") # Отладка
-        # Извлекаем релевантные фрагменты и рекомендации
-        fragments, recommendations = self.extract_relevant_fragments(text, top_n=top_n, top_k_fragments=top_k_fragments) # <<< ИЗМЕНЕНО: получаем и рекомендации
-        print(f"--- [DEBUG generate_answer] Извлечено {len(fragments)} фрагментов и {len(recommendations)} рекомендаций.") # Отладка
-        
-        # Если фрагментов нет, возвращаем сообщение об ошибке
-        if not fragments:
-            print("--- [DEBUG generate_answer] Фрагменты не найдены. Возврат ошибки.") # Отладка
+        if not text.strip():
             return {
-                "answer": "К сожалению, не удалось найти релевантную информацию по вашему запросу.",
+                "answer": "Пустой запрос.", 
+                "fragments": [], 
+                "sources": [],
+                "reasoning": "Запрос не содержит текста.", # Добавляем причину для пустого запроса
+                "llm_answer_raw": "",
+                "recommendations_df_json": pd.DataFrame().to_json(orient="records", force_ascii=False),
+                "execution_time": time.time() - start_time
+            }
+
+        print(f"\\nПолучен запрос: '{text}'")
+        print(f"Параметры: top_n={top_n}, top_k_fragments={top_k_fragments}")
+
+        try:
+            # 1. Классификация запроса (чтобы передать в _create_reasoning_prompt)
+            print("Анализ запроса...")
+            query_classification = self.text_processor.classify_query(text)
+            print(f"Результаты классификации: {query_classification}")
+            
+            # 2. Извлечение релевантных фрагментов и получение DataFrame с рекомендациями
+            print(f"Извлечение релевантных фрагментов (top_n={top_n}, top_k_fragments={top_k_fragments})...")
+            # Вызываем extract_relevant_fragments, он вернет и фрагменты, и DataFrame
+            fragments, recommendations_df = self.extract_relevant_fragments(
+                text, 
+                top_n=top_n, 
+                top_k_fragments=top_k_fragments
+            )
+            print(f"Найдено {len(fragments)} релевантных фрагментов.")
+            # print(f"DataFrame рекомендаций (первые 5):\\n{recommendations_df.head().to_string()}") # Отладка
+
+            # Добавляем обработку случая, когда фрагменты не найдены
+            if not fragments:
+                print("Релевантные фрагменты не найдены.")
+                # Можно вернуть стандартный ответ или попробовать сгенерировать ответ без фрагментов
+                return {
+                    "answer": "К сожалению, не удалось найти точную информацию по вашему запросу в базе знаний.",
+                    "fragments": [],
+                    "sources": [],
+                    "reasoning": "Не найдено релевантных фрагментов текста в статьях базы знаний, соответствующих запросу.",
+                    "llm_answer_raw": "",
+                    "recommendations_df_json": recommendations_df.to_json(orient="records", force_ascii=False),
+                    "execution_time": time.time() - start_time
+                }
+
+            # 3. Генерация ответа с помощью LLM (если включено)
+            llm_answer = "Генерация ответа LLM отключена."
+            llm_answer_raw = "" # Сохраняем 'сырой' ответ LLM для отладки
+            if self.use_llm and self.llm:
+                print("Генерация ответа с помощью LLM...")
+                prompt = self.create_prompt_for_llm(text, fragments)
+                # print(f"--- LLM Prompt для ответа: ---\\n{prompt}\\n---") # Отладка
+                
+                # Убедимся, что llm - это pipeline
+                if isinstance(self.llm, pipeline):
+                    try:
+                        # Устанавливаем параметры генерации
+                        generation_args = {
+                            "max_new_tokens": 350, # Увеличим немного лимит
+                            "temperature": 0.7, # Можно немного повысить для разнообразия
+                            "top_p": 0.9,
+                            "do_sample": True,
+                            "eos_token_id": self.llm.tokenizer.eos_token_id,
+                            "pad_token_id": self.llm.tokenizer.pad_token_id if self.llm.tokenizer.pad_token_id else self.llm.tokenizer.eos_token_id # Используем eos если pad не задан
+                        }
+                        
+                        outputs = self.llm(prompt, **generation_args)
+                        generated_text = outputs[0]['generated_text']
+                        
+                        # Извлекаем только сгенерированный ответ (после промпта)
+                        # Ищем конец промпта, чтобы отсечь его. Phi-3 обычно добавляет <|end|> или <|assistant|>
+                        prompt_end_markers = ["<|end|>", "<|assistant|>"]
+                        answer_start_index = -1
+                        # Ищем последнее вхождение маркера конца промпта
+                        for marker in prompt_end_markers:
+                           idx = generated_text.rfind(marker)
+                           if idx != -1:
+                               answer_start_index = max(answer_start_index, idx + len(marker))
+
+                        if answer_start_index != -1:
+                             llm_answer_raw = generated_text[answer_start_index:].strip()
+                        else:
+                            # Если маркеры не найдены, пытаемся отрезать исходный промпт
+                            if generated_text.startswith(prompt):
+                                llm_answer_raw = generated_text[len(prompt):].strip()
+                            else:
+                                # Если и это не сработало, берем все как есть (менее надежно)
+                                llm_answer_raw = generated_text.strip()
+                                print("Предупреждение: Не удалось точно отделить ответ LLM от промпта.")
+
+                        # Пост-обработка ответа (убираем возможные артефакты)
+                        llm_answer = llm_answer_raw.replace("<|endoftext|>", "").replace("<|im_end|>", "").strip()
+                        
+                        print(f"Ответ LLM получен (сырой): {llm_answer_raw[:200]}...") # Показываем начало сырого ответа
+                        print(f"Ответ LLM получен (обработанный): {llm_answer[:200]}...") # Показываем начало обработанного ответа
+
+                    except Exception as e:
+                        print(f"Ошибка при генерации ответа LLM: {e}")
+                        # traceback.print_exc() # Для детальной отладки
+                        llm_answer = "Произошла ошибка при генерации ответа."
+                        llm_answer_raw = f"Error: {e}"
+                else:
+                    print("Ошибка: self.llm не является объектом pipeline.")
+                    llm_answer = "Ошибка конфигурации LLM."
+                    llm_answer_raw = "LLM is not a Hugging Face pipeline object."
+            else:
+                 # Если LLM отключен, формируем ответ из лучших фрагментов
+                 print("LLM отключен. Формируем ответ из лучших фрагментов.")
+                 # Сортируем фрагменты по убыванию score_final, если он есть, иначе по score_cross_encoder
+                 sort_key = 'score_final' if 'score_final' in fragments[0] else 'score_cross_encoder'
+                 fragments.sort(key=lambda x: x.get(sort_key, 0), reverse=True)
+                 # Берем текст первого (лучшего) фрагмента
+                 llm_answer = fragments[0]['text']
+                 llm_answer_raw = "LLM disabled. Used best fragment."
+
+
+            # 4. Генерация объяснения ("размышления") с помощью LLM (если включено)
+            reasoning_text = "Генерация объяснения отключена или произошла ошибка."
+            if self.use_llm and self.llm and isinstance(self.llm, pipeline):
+                print("Генерация объяснения выбора (reasoning)...")
+                reasoning_prompt = self._create_reasoning_prompt(text, query_classification, recommendations_df, fragments)
+                # print(f"--- LLM Prompt для объяснения: ---\\n{reasoning_prompt}\\n---") # Отладка
+                try:
+                    # Используем немного другие параметры для краткости
+                    reasoning_args = {
+                        "max_new_tokens": 150, # Короче ответ для объяснения
+                        "temperature": 0.5, # Менее креативный
+                        "top_p": 0.9,
+                        "do_sample": True,
+                        "eos_token_id": self.llm.tokenizer.eos_token_id,
+                        "pad_token_id": self.llm.tokenizer.pad_token_id if self.llm.tokenizer.pad_token_id else self.llm.tokenizer.eos_token_id
+                    }
+                    
+                    reasoning_outputs = self.llm(reasoning_prompt, **reasoning_args)
+                    generated_reasoning = reasoning_outputs[0]['generated_text']
+
+                    # Извлекаем только сгенерированное объяснение
+                    prompt_end_markers = ["<|end|>", "<|assistant|>"]
+                    reasoning_start_index = -1
+                    for marker in prompt_end_markers:
+                       idx = generated_reasoning.rfind(marker)
+                       if idx != -1:
+                           reasoning_start_index = max(reasoning_start_index, idx + len(marker))
+                    
+                    if reasoning_start_index != -1:
+                         reasoning_text_raw = generated_reasoning[reasoning_start_index:].strip()
+                    else:
+                        if generated_reasoning.startswith(reasoning_prompt):
+                            reasoning_text_raw = generated_reasoning[len(reasoning_prompt):].strip()
+                        else:
+                            reasoning_text_raw = generated_reasoning.strip()
+                            print("Предупреждение: Не удалось точно отделить объяснение LLM от промпта.")
+
+                    # Пост-обработка
+                    reasoning_text = reasoning_text_raw.replace("<|endoftext|>", "").replace("<|im_end|>", "").strip()
+                    print(f"Объяснение LLM получено: {reasoning_text[:200]}...")
+
+                except Exception as e:
+                    print(f"Ошибка при генерации объяснения LLM: {e}")
+                    # traceback.print_exc() # Для детальной отладки
+                    reasoning_text = f"Произошла ошибка при генерации объяснения: {e}"
+            elif not (self.use_llm and self.llm and isinstance(self.llm, pipeline)):
+                 reasoning_text = "Генерация объяснения невозможна: LLM отключена или не является pipeline."
+                 if not fragments: # Если фрагментов нет, даем другую причину
+                      reasoning_text = "Не найдено релевантных фрагментов текста в статьях базы знаний, соответствующих запросу."
+                 elif fragments: # Если фрагменты есть, но LLM нет
+                      reasoning_text = "Объяснение не сгенерировано, так как LLM отключена. Ответ сформирован на основе наиболее релевантного фрагмента."
+
+
+            # 5. Формирование источников
+            print("Формирование источников...")
+            source_ids = set(frag['doc_id'] for frag in fragments)
+            sources = self.dataset.loc[list(source_ids), ['id', 'Заголовок статьи', 'Ссылка на статью']].rename(
+                 columns={'Заголовок статьи': 'title', 'Ссылка на статью': 'url', 'id': 'doc_id'}
+            ).to_dict('records')
+            print(f"Сформировано {len(sources)} источников.")
+
+            # 6. Формирование итогового ответа
+            end_time = time.time()
+            result = {
+                "answer": llm_answer,
+                "fragments": fragments, # Оставляем фрагменты для возможного использования на фронтенде
+                "sources": sources,
+                "reasoning": reasoning_text, # Добавляем сгенерированное объяснение
+                "llm_answer_raw": llm_answer_raw, # Добавляем сырой ответ для отладки
+                "recommendations_df_json": recommendations_df.to_json(orient="records", force_ascii=False), # Добавляем DF для анализа
+                "execution_time": end_time - start_time
+            }
+            print(f"Генерация ответа завершена за {result['execution_time']:.2f} сек.")
+            return result
+
+        except Exception as e:
+            # Логируем ошибку
+            print(f"Критическая ошибка в generate_answer: {e}")
+            # import traceback # Раскомментируйте для полного стека вызовов
+            # traceback.print_exc()
+            
+            # Возвращаем сообщение об ошибке
+            return {
+                "answer": f"Произошла внутренняя ошибка при обработке запроса: {e}",
                 "fragments": [],
                 "sources": [],
-                "reasoning_explanation": "Не удалось найти релевантные статьи или фрагменты для генерации объяснения.",
-                "execution_time": time.time() - start_time,
-                "query_analysis": query_classification
-            }
-        
-        print("--- [DEBUG generate_answer] Формирование основного ответа...") # Отладка
-        # Генерируем ответ на основе релевантных фрагментов (логика без LLM для основного ответа)
-        try:
-            # ... (существующая логика формирования 'answer' из фрагментов) ...
-            # Составляем ответ из наиболее релевантных фрагментов
-            if fragments:
-                top_fragment = fragments[0]['fragment']
-                title = fragments[0]['title']
-                intro = ""
-                if query_classification['query_type'] == 'error':
-                    intro = "Для решения вашей проблемы рекомендуется: "
-                elif query_classification['query_type'] == 'instruction':
-                    intro = "Инструкция по вашему запросу: "
-                else:
-                    intro = "По вашему запросу найдена следующая информация: "
-                answer = f"{intro}\\n\\n{top_fragment}\\n\\nИсточник: {title}"
-                if len(fragments) > 1:
-                    answer += "\\n\\nДополнительная информация:"
-                    for i in range(1, min(3, len(fragments))):
-                        fragment = fragments[i]
-                        answer += f"\\n\\n{fragment['fragment']}\\nИсточник: {fragment['title']}"
-            else:
-                answer = "К сожалению, не удалось сформировать ответ на ваш запрос."
-            # ... (конец логики формирования 'answer') ...
-
-            # Получаем источники
-            sources = list(set([fragment['title'] for fragment in fragments]))
-
-            # --- Генерация объяснения с помощью LLM ---
-            print("--- [DEBUG generate_answer] Проверка перед генерацией объяснения LLM ---") # Отладка
-            if not self.use_llm:
-                 reasoning_explanation = "Генерация объяснения пропущена: флаг use_llm установлен в False."
-                 print(f"--- [DEBUG generate_answer] {reasoning_explanation}") # Отладка
-            elif self.llm is None:
-                 reasoning_explanation = "Генерация объяснения невозможна: LLM модель не загружена (self.llm is None). Проверьте ошибки при запуске сервера."
-                 print(f"--- [DEBUG generate_answer] {reasoning_explanation}") # Отладка
-            else:
-                 # Попытка генерации, только если use_llm=True и llm не None
-                 print("--- [DEBUG generate_answer] Попытка генерации объяснения LLM (use_llm=True, llm не None).") # Отладка
-                 try:
-                     print("--- [DEBUG generate_answer] Создание промпта для объяснения...") # Отладка
-                     # Создаем промпт для объяснения
-                     reasoning_prompt = self._create_reasoning_prompt(
-                         text, query_classification, recommendations, fragments
-                     )
-                     print(f"--- [DEBUG generate_answer] Промпт создан (длина: {len(reasoning_prompt)}). Начало: {reasoning_prompt[:100]}...") # Отладка
-                     
-                     print("--- [DEBUG generate_answer] Вызов LLM для генерации объяснения...") # Отладка
-                     # Генерируем объяснение
-                     # Параметры генерации можно настроить
-                     llm_output = self.llm(reasoning_prompt, max_new_tokens=500, num_return_sequences=1, temperature=0.7, do_sample=True) # <<< ДОБАВЛЕНО: do_sample=True
-                     print(f"--- [DEBUG generate_answer] Ответ от LLM получен: {type(llm_output)}") # Отладка
-                     # Распечатаем часть ответа для анализа структуры
-                     if isinstance(llm_output, list) and len(llm_output) > 0:
-                          print(f"--- [DEBUG generate_answer] Первый элемент ответа LLM: {llm_output[0]}")
-                     elif isinstance(llm_output, dict):
-                          print(f"--- [DEBUG generate_answer] Ответ LLM (dict): {llm_output}")
-                     
-                     # Извлекаем текст объяснения (структура ответа LLM может отличаться)
-                     if llm_output and isinstance(llm_output, list) and 'generated_text' in llm_output[0]:
-                        # Удаляем исходный промпт из ответа LLM, если он там есть
-                        full_llm_text = llm_output[0]['generated_text']
-                        reasoning_explanation = full_llm_text.replace(reasoning_prompt, "").strip()
-                        if not reasoning_explanation: # Если после удаления промпта ничего не осталось
-                            reasoning_explanation = full_llm_text # Возвращаем полный текст LLM
-                     else:
-                        print(f"Предупреждение: Неожиданный формат ответа LLM для объяснения: {llm_output}")
-                        reasoning_explanation = "Не удалось извлечь объяснение из ответа LLM."
-
-                     print(f"--- [DEBUG generate_answer] Итоговое объяснение: {reasoning_explanation[:100]}...") # Отладка
-                 except Exception as e:
-                     # Убедимся, что ошибка выводится в консоль
-                     print(f"!!!!!!!! ОШИБКА при генерации объяснения LLM: {e} !!!!!!!!") # <<< Улучшено
-                     import traceback
-                     traceback.print_exc() # Печатаем полный traceback
-                     reasoning_explanation = f"Произошла ошибка при генерации объяснения: {e}"
-            #else:
-            #     print("--- [DEBUG generate_answer] Генерация объяснения пропущена (use_llm=False или llm=None).") # Отладка - Заменено явными проверками выше
-            # -----------------------------------------
-            
-            print(f"--- [DEBUG generate_answer] Итоговое объяснение: {reasoning_explanation[:100]}...") # Отладка
-            
-            final_result = {
-                "answer": answer,
-                "fragments": [f['fragment'] for f in fragments],
-                "sources": sources,
-                "reasoning_explanation": reasoning_explanation, # <<< ДОБАВЛЕНО
-                "execution_time": time.time() - start_time,
-                "query_analysis": query_classification
-            }
-            print("--- [DEBUG generate_answer] Возвращаемый результат сформирован.") # Отладка
-            # print(final_result) # Можно раскомментировать для полного вывода
-            return final_result
-            
-        except Exception as e:
-            print(f"!!!!!!!! ОШИБКА при генерации ИТОГОВОГО ответа: {e} !!!!!!!!") # Отладка
-            import traceback
-            traceback.print_exc()
-            # ... (обработка ошибок) ...
-            answer = "Произошла ошибка при обработке вашего запроса."
-            sources = list(set([f['title'] for f in fragments])) if fragments else []
-            return {
-                "answer": answer,
-                "fragments": [f['fragment'] for f in fragments] if fragments else [],
-                "sources": sources,
-                "reasoning_explanation": f"Произошла ошибка при генерации ответа, объяснение недоступно: {e}", # <<< ДОБАВЛЕНО
-                "execution_time": time.time() - start_time,
-                "query_analysis": query_classification
+                "reasoning": f"Ошибка обработки: {e}", # Указываем ошибку в причине
+                "llm_answer_raw": "",
+                "recommendations_df_json": pd.DataFrame().to_json(orient="records", force_ascii=False),
+                "execution_time": time.time() - start_time
             }
 
     def save_model(self, model_path: str) -> None:

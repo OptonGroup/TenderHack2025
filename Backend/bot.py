@@ -369,9 +369,8 @@ async def process_chat_message(message: types.Message, state: FSMContext):
             return
         
         # 2. Отправляем запрос к AI для получения ответа
-        ai_response = requests.post(
-            f"{API_URL}/api/ai-query",
-            json={"query": user_message},
+        ai_response = requests.get(
+            f"http://localhost:7777/query?query={requests.utils.quote(user_message)}",
             headers=headers
         )
         

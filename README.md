@@ -27,6 +27,87 @@ TenderHack2025 - это интеллектуальный помощник для
 - [Passlib](https://passlib.readthedocs.io/) - библиотека для хэширования паролей
 - [Microsoft Phi-3-mini-4k-instruct](https://huggingface.co/microsoft/phi-3-mini-4k-instruct) - языковая модель для локального развертывания
 
+## Архитектура Модели ИИ-Ассистента
+
+```mermaid
+graph LR
+    A[01. Запрос информации] --> B(spaCy);
+    A --> C(NLTK);
+    A --> D(SymSpell);
+    subgraph "Этап 1: Обработка запроса"
+        direction LR
+        A
+        B
+        C
+        D
+        T1("- Классификация типа запроса <br/> (ошибка/инструкция/справка)<br/>- Предобработка запроса <br/> (нормализация, токенизация, <br/> исправление опечаток)<br/>- Генерация вариантов <br/> запроса для улучшения поиска") -.-> A;
+    end
+
+    A --> E[02. Поиск информации среди статей];
+    E --> F(BM25);
+    E --> G(BERT);
+    E --> H(ensemble);
+    subgraph "Этап 2: Поиск релевантных статей"
+        direction LR
+        E
+        F
+        G
+        H
+        T2("- Взвешенное комбинирование <br/> BM25, BERT<br/>- Применение контекстных весов <br/> на основе классификации запроса<br/>- Возможность отключения <br/> отдельных моделей") -.-> E;
+    end
+
+    E --> I[03. Обработка статей];
+    I --> J(sber_nlu);
+    I --> K(NLTK);
+    I --> L(Cross-Encoders);
+    subgraph "Этап 3: Анализ и ранжирование статей"
+        direction LR
+        I
+        J
+        K
+        L
+        T3("- Объединение заголовков и описаний <br/> для улучшения поиска<br/>- Классификация документов <br/> по типам<br/>- 2х этапный поиск информации: <br/>   - быстрый с BM25 <br/>   - долгий с Cross-Encoders") -.-> I;
+    end
+
+    I --> M[04. Формирование ответа];
+    M --> N(torch);
+    M --> O(transformers);
+    subgraph "Этап 4: Генерация ответа"
+        direction LR
+        M
+        N
+        O
+        T4("- Сортировка и выбор top-n <br/> релевантных документов<br/>- Выделение необходимой информации<br/>- Передача в LLM для генерации <br/> ответа и добавление ссылок <br/> на источники") -.-> M;
+    end
+
+    style A fill:#0a1931,stroke:#333,stroke-width:2px,color:#fff
+    style E fill:#0a1931,stroke:#333,stroke-width:2px,color:#fff
+    style I fill:#0a1931,stroke:#333,stroke-width:2px,color:#fff
+    style M fill:#0a1931,stroke:#333,stroke-width:2px,color:#fff
+
+    style B fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style C fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style D fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style F fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style G fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style H fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style J fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style K fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style L fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style N fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+    style O fill:#182c4a,stroke:#555,stroke-width:1px,color:#eee
+
+    style T1 fill:#0a1931,stroke:#0a1931,color:#ccc
+    style T2 fill:#0a1931,stroke:#0a1931,color:#ccc
+    style T3 fill:#0a1931,stroke:#0a1931,color:#ccc
+    style T4 fill:#0a1931,stroke:#0a1931,color:#ccc
+
+```
+
+Я добавил этот график в ваш `README.md` файл.
+
+
+
 ## 📂 Структура проекта
 
 ```
