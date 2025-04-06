@@ -8,6 +8,8 @@ import pandas as pd
 from model import Model
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
+import numpy as np
+import uvicorn
 
 app = fastapi.FastAPI()
 
@@ -141,9 +143,30 @@ class HybridAssistant:
 assistant = HybridAssistant()
 
 @app.get("/query")
-async def get_answer(query: str):
+async def get_answer_endpoint(query: str):
+    """Основной эндпоинт для получения сгенерированного ответа."""
     return assistant.get_answer(query)
 
+@app.get("/recommendations")
+async def get_recommendations_endpoint(query: str, top_n: int = 10):
+    """Эндпоинт для получения релевантных статей с промежуточными оценками."""
+    if not assistant.is_initialized:
+        raise fastapi.HTTPException(status_code=503, detail="Модель не инициализирована")
+    
+    if not query.strip():
+        raise fastapi.HTTPException(status_code=400, detail="Пустой запрос")
+        
+    try:
+        # Используем метод get_recommendations напрямую
+        recommendations_df = assistant.model.get_recommendations(query, top_n=top_n)
+        # Преобразуем DataFrame в список словарей для JSON-ответа
+        # Обрабатываем NaN значения, чтобы избежать ошибок сериализации
+        recommendations_list = recommendations_df.replace({np.nan: None}).to_dict('records')
+        return {"recommendations": recommendations_list}
+    except Exception as e:
+        # Логируем ошибку на сервере (опционально)
+        # print(f"Ошибка при получении рекомендаций: {e}")
+        raise fastapi.HTTPException(status_code=500, detail=f"Ошибка при обработке запроса: {e}")
+
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=7777)
