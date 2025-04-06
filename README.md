@@ -226,5 +226,6 @@ MIT
 
 # Скриншоты продукта
 
-![pupupu](https://github.com/user-attachments/assets/59bf043a-908e-476e-a298-14f3dff9e6b8)
+
+![pupupu](https://github.com/user-attachments/assets/06fc2a7d-7f98-4482-a978-badba437e883)
 
